@@ -1,7 +1,8 @@
 spring:
+  mongodb:
+    uri: mongodb://localhost:27017/tracker
   data:
     mongodb:
-      uri: mongodb://localhost:27017/tracker
       auto-index-creation: true
     redis:
       host: localhost
