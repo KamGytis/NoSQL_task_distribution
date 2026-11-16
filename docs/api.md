@@ -9,15 +9,15 @@ Authentication: session cookie (stored in Redis)
 | POST | /auth/register | Register | Done |
 | POST | /auth/login | Log in | Done |
 | POST | /auth/logout | Log out | Done |
-| GET | /users/me | Current user | TODO |
+| GET | /users/me | Current user | Done |
 | GET | /users/me/export | Download data archive | TODO |
 
 ## Projects
 | Method | Endpoint | Description | Status |
 |---|---|---|---|
-| POST | /projects | Create project | TODO |
+| POST | /projects | Create project | Done |
 | GET | /projects | My projects | TODO |
-| POST | /projects/{id}/members | Add member | TODO |
+| POST | /projects/{id}/members | Add member | Done |
 
 ## Issues
 | Method | Endpoint | Description | Status |
