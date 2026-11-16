@@ -2,16 +2,29 @@ spring:
   data:
     mongodb:
       uri: mongodb://localhost:27017/tracker
+      auto-index-creation: true
     redis:
       host: localhost
       port: 6379
   elasticsearch:
     uris: http://localhost:9200
   session:
-    store-type: redis
+    timeout: 30m
+    redis:
+      namespace: tracker:session
   autoconfigure:
     exclude:
       - org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration
+
+server:
+  servlet:
+    session:
+      cookie:
+        http-only: true
+        same-site: lax
+  error:
+    include-message: always
+    include-binding-errors: always
 
 clickhouse:
   url: jdbc:clickhouse://localhost:8123/default
