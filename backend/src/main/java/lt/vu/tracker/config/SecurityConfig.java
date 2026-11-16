@@ -36,7 +36,7 @@ public class SecurityConfig {
     @Bean
     SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                .csrf(csrf -> csrf.disable())   // REST API with SameSite=Lax session cookie
+                .csrf(csrf -> csrf.disable())   // REST API with SameSite=Lax session cookie (enable later when project is finished)
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/error").permitAll()
                         .requestMatchers("/api/v1/auth/register", "/api/v1/auth/login").permitAll()
