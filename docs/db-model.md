@@ -4,7 +4,7 @@
 
 | Collection | Purpose | Status |
 |---|---|---|
-| users | Registered users | TODO |
+| users | Registered users | Done |
 | projects | Projects, members with roles, workflow | TODO |
 | issues | Epics, stories, tasks, bugs, subtasks | TODO |
 | sprints | Sprint planning | TODO |
