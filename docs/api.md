@@ -6,9 +6,9 @@ Authentication: session cookie (stored in Redis)
 ## Auth and users
 | Method | Endpoint | Description | Status |
 |---|---|---|---|
-| POST | /auth/register | Register | TODO |
-| POST | /auth/login | Log in | TODO |
-| POST | /auth/logout | Log out | TODO |
+| POST | /auth/register | Register | Done |
+| POST | /auth/login | Log in | Done |
+| POST | /auth/logout | Log out | Done |
 | GET | /users/me | Current user | TODO |
 | GET | /users/me/export | Download data archive | TODO |
 
