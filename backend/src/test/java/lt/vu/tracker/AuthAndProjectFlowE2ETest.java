@@ -243,4 +243,64 @@ class AuthAndProjectFlowE2ETest {
             HttpResponse<String> after = alice.send("GET", boardPath, null);
             assertThat(after.body()).contains("\"count\":1", "\"count\":0");
         }
+
+    //Comment
+    @Test
+    void commentsRespectRolesAndMentions() {
+        Api alice = registerAndLogin(uniqueEmail());
+        String bobEmail = uniqueEmail();
+        Api bob = registerAndLogin(bobEmail);
+        String carolEmail = uniqueEmail();
+        Api carol = registerAndLogin(carolEmail);
+        String outsiderEmail = uniqueEmail();
+        Api outsider = registerAndLogin(outsiderEmail);
+
+        HttpResponse<String> project = alice.send("POST", "/projects",
+                "{\"key\":\"" + uniqueProjectKey() + "\",\"name\":\"Comments demo\"}");
+        assertThat(project.statusCode()).isEqualTo(201);
+        String projectId = field(project.body(), "id");
+        joinProject(alice, projectId, bob, bobEmail, "MEMBER");
+        joinProject(alice, projectId, carol, carolEmail, "VIEWER");
+
+        HttpResponse<String> issue = alice.send("POST", "/projects/" + projectId + "/issues",
+                "{\"title\":\"Discuss me\"}");
+        assertThat(issue.statusCode()).isEqualTo(201);
+        String issuePath = "/issues/" + field(issue.body(), "key");
+
+        // a member comments and mentions a viewer and an outsider: only the project member is kept
+        HttpResponse<String> created = bob.send("POST", issuePath + "/comments",
+                "{\"text\":\"Please review @" + carolEmail + " and @" + outsiderEmail + "\"}");
+        assertThat(created.statusCode()).isEqualTo(201);
+        assertThat(created.body()).contains("\"email\":\"" + carolEmail + "\"", "\"canEdit\":true", "\"canDelete\":true");
+        assertThat(created.body()).doesNotContain("\"email\":\"" + outsiderEmail + "\"");
+        String commentId = field(created.body(), "id");
+
+        // validation and roles
+        assertThat(bob.send("POST", issuePath + "/comments", "{\"text\":\"   \"}").statusCode()).isEqualTo(400);
+        assertThat(carol.send("POST", issuePath + "/comments", "{\"text\":\"Can I?\"}").statusCode()).isEqualTo(403);
+        assertThat(outsider.send("POST", issuePath + "/comments", "{\"text\":\"Hi\"}").statusCode()).isEqualTo(404);
+        assertThat(outsider.send("GET", issuePath + "/comments", null).statusCode()).isEqualTo(404);
+
+        // a viewer can read, but sees no edit or delete rights on someone else's comment
+        HttpResponse<String> asViewer = carol.send("GET", issuePath + "/comments", null);
+        assertThat(asViewer.statusCode()).isEqualTo(200);
+        assertThat(asViewer.body()).contains("Please review", "\"canEdit\":false", "\"canDelete\":false");
+
+        // only the author edits, and the mentions are recomputed
+        assertThat(alice.send("PUT", "/comments/" + commentId, "{\"text\":\"hijack\"}").statusCode()).isEqualTo(403);
+        HttpResponse<String> edited = bob.send("PUT", "/comments/" + commentId, "{\"text\":\"Edited, no mentions\"}");
+        assertThat(edited.statusCode()).isEqualTo(200);
+        assertThat(edited.body()).contains("Edited, no mentions", "\"mentions\":[]")
+                .doesNotContain("\"editedAt\":null");
+
+        // delete: another member is refused, an admin may
+        assertThat(carol.send("DELETE", "/comments/" + commentId, null).statusCode()).isEqualTo(403);
+        assertThat(alice.send("DELETE", "/comments/" + commentId, null).statusCode()).isEqualTo(204);
+        assertThat(alice.send("GET", issuePath + "/comments", null).body()).isEqualTo("[]");
+
+        // deleting the issue removes its comments, and the issue is gone
+        assertThat(bob.send("POST", issuePath + "/comments", "{\"text\":\"Last words\"}").statusCode()).isEqualTo(201);
+        assertThat(alice.send("DELETE", issuePath, null).statusCode()).isEqualTo(204);
+        assertThat(alice.send("GET", issuePath + "/comments", null).statusCode()).isEqualTo(404);
+    }
 }

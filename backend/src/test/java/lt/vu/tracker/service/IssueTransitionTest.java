@@ -16,6 +16,7 @@ import java.util.Optional;
 import static lt.vu.tracker.TestData.*;
 import static lt.vu.tracker.model.enums.IssueStatus.*;
 import static lt.vu.tracker.model.enums.ProjectRole.*;
+import lt.vu.tracker.repository.CommentRepository;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
@@ -24,7 +25,8 @@ class IssueTransitionTest {
     private final IssueRepository issues = mock(IssueRepository.class);
     private final ProjectRepository projects = mock(ProjectRepository.class);
     private final StringRedisTemplate redis = mock(StringRedisTemplate.class);
-    private final IssueService service = new IssueService(issues, new PermissionService(projects), redis);
+    private final IssueService service = new IssueService(issues, new PermissionService(projects),
+                  redis, mock(CommentRepository.class));
 
     private final User alice = user("u1", "alice@test.lt");   // ADMIN
     private final User bob = user("u2", "bob@test.lt");       // MEMBER
