@@ -9,6 +9,7 @@ import lt.vu.tracker.model.User;
 import lt.vu.tracker.model.enums.IssueStatus;
 import lt.vu.tracker.model.enums.ProjectRole;
 import lt.vu.tracker.repository.IssueRepository;
+import lt.vu.tracker.repository.CommentRepository
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
@@ -26,6 +27,7 @@ public class IssueService {
     private final IssueRepository issueRepository;
     private final PermissionService permissionService;
     private final StringRedisTemplate redisTemplate;
+    private final CommentRepository commentRepository;
 
     public IssueResponse create(String projectId, IssueRequest request, User current) {
         Project project = permissionService.requireRole(
@@ -101,6 +103,7 @@ public class IssueService {
     public void delete(String key, User current) {
         Issue issue = requireIssue(key, current, ProjectRole.ADMIN);
         issueRepository.delete(issue);
+        commentRepository.deleteByIssueId(issue.getId());
     }
 
     private Issue requireIssue(String key, User current, ProjectRole minimumRole) {
