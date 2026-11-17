@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -54,5 +55,47 @@ public class IssueService {
                     HttpStatus.CONFLICT, "Generated issue key already exists", exception
             );
         }
+    }
+    public List<IssueResponse> list(String projectId, User current) {
+        permissionService.requireRole(projectId, current.getId(), ProjectRole.VIEWER);
+
+        return issueRepository.findByProjectIdOrderByCreatedAtDesc(projectId)
+                .stream()
+                .map(IssueResponse::from)
+                .toList();
+    }
+
+    public IssueResponse get(String key, User current) {
+        return IssueResponse.from(requireIssue(key, current, ProjectRole.VIEWER));
+    }
+
+    public IssueResponse update(String key, IssueRequest request, User current) {
+        Issue issue = requireIssue(key, current, ProjectRole.MEMBER);
+        issue.setTitle(request.title().trim());
+        issue.setDescription(request.description());
+
+        return IssueResponse.from(issueRepository.save(issue));
+    }
+
+    public IssueResponse transition(String key, IssueStatus status, User current) {
+        Issue issue = requireIssue(key, current, ProjectRole.MEMBER);
+        issue.setStatus(status);
+
+        return IssueResponse.from(issueRepository.save(issue));
+    }
+
+    public void delete(String key, User current) {
+        Issue issue = requireIssue(key, current, ProjectRole.ADMIN);
+        issueRepository.delete(issue);
+    }
+
+    private Issue requireIssue(String key, User current, ProjectRole minimumRole) {
+        Issue issue = issueRepository.findByKey(key)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Issue not found"
+                ));
+
+        permissionService.requireRole(issue.getProjectId(), current.getId(), minimumRole);
+        return issue;
     }
 }
