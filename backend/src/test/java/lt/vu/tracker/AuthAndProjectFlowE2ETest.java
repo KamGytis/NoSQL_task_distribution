@@ -269,7 +269,7 @@ class AuthAndProjectFlowE2ETest {
 
         // a member comments and mentions a viewer and an outsider: only the project member is kept
         HttpResponse<String> created = bob.send("POST", issuePath + "/comments",
-                "{\"text\":\"Please review @" + carolEmail + " and @" + outsiderEmail + \"}");
+                "{\"text\":\"Please review @" + carolEmail + " and @" + outsiderEmail + "\"}");
         assertThat(created.statusCode()).isEqualTo(201);
         assertThat(created.body()).contains("\"email\":\"" + carolEmail + "\"", "\"canEdit\":true", "\"canDelete\":true");
         assertThat(created.body()).doesNotContain("\"email\":\"" + outsiderEmail + "\"");

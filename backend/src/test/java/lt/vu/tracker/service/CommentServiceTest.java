@@ -168,10 +168,9 @@ class CommentServiceTest {
     //  list
     @Test
     void listShowsWhatTheCallerMayDo() {
-        commentBy("c1", "u2");   // bob's
-        commentBy("c2", "u3");   // carol's
-        when(comments.findByIssueIdOrderByCreatedAtAsc("i1"))
-                .thenReturn(List.of(comments.findById("c1").orElseThrow(), comments.findById("c2").orElseThrow()));
+        Comment fromBob = commentBy("c1", "u2");
+        Comment fromCarol = commentBy("c2", "u3");
+        when(comments.findByIssueIdOrderByCreatedAtAsc("i1")).thenReturn(List.of(fromBob, fromCarol));
 
         List<CommentResponse> asViewer = service.list("DEMO-1", carol);
 
