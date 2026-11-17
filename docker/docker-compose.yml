@@ -7,6 +7,8 @@ services:
   redis:
     image: redis:7
     ports: ["6379:6379"]
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "always"]
+    volumes: [redis_data:/data]
 
   clickhouse:
     image: clickhouse/clickhouse-server:latest
@@ -30,3 +32,4 @@ volumes:
   mongo_data:
   clickhouse_data:
   es_data:
+  redis_data:
