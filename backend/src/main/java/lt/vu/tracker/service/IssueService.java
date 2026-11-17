@@ -15,8 +15,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+
 import java.time.Instant;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -79,8 +81,20 @@ public class IssueService {
 
     public IssueResponse transition(String key, IssueStatus status, User current) {
         Issue issue = requireIssue(key, current, ProjectRole.MEMBER);
-        issue.setStatus(status);
+        IssueStatus from = issue.getStatus();
 
+        if (from == status) {
+            return IssueResponse.from(issue);
+        }
+        if (!from.canMoveTo(status)) {
+            String allowed = from.nextStatuses().stream()
+                    .map(Enum::name)
+                    .collect(Collectors.joining(", "));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Cannot move an issue from " + from + " to " + status + ". Allowed: " + allowed);
+        }
+
+        issue.setStatus(status);
         return IssueResponse.from(issueRepository.save(issue));
     }
 
