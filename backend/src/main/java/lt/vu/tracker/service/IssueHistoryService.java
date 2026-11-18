@@ -136,4 +136,10 @@ public class IssueHistoryService {
                         UserSummary.from(actors.get(e.getActorId())), e.getChanges(), e.getCreatedAt()))
                 .toList();
     }
+    public void recordAssigned(Issue issue, User from, User to, User actor) {
+        write(issue, HistoryAction.UPDATED,
+                List.of(new FieldChange("assignee",
+                        from == null ? null : from.getEmail(),
+                        to == null ? null : to.getEmail())), actor);
+    }
 }
