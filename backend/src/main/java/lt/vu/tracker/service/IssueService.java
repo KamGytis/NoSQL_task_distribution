@@ -10,7 +10,7 @@ import lt.vu.tracker.model.enums.IssueStatus;
 import lt.vu.tracker.model.enums.ProjectRole;
 import lt.vu.tracker.repository.IssueRepository;
 import lt.vu.tracker.repository.CommentRepository;
-import lt.vu.tracker.repository.WorklogRepository
+import lt.vu.tracker.repository.WorklogRepository;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
