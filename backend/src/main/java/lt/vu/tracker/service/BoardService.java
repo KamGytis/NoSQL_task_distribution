@@ -21,14 +21,27 @@ import java.util.Map;
 public class BoardService {
     private final IssueRepository issueRepository;
     private final PermissionService permissionService;
+    private final ProjectReadCache projectReadCache;
 
     public BoardResponse get(String projectId, User current) {
-        Project project = permissionService.requireRole(projectId, current.getId(), ProjectRole.VIEWER);
+        Project project = permissionService.requireRole(
+                projectId, current.getId(), ProjectRole.VIEWER
+        );
 
+        List<BoardColumnResponse> columns = projectReadCache.read(
+                projectId, "board", BoardColumnResponse[].class, () -> loadColumns(projectId)
+        );
+
+        ProjectRole myRole = permissionService.roleOf(project, current.getId()).orElse(null);
+        return new BoardResponse(project.getId(), project.getKey(), project.getName(), myRole, columns);
+    }
+
+    private List<BoardColumnResponse> loadColumns(String projectId) {
         Map<IssueStatus, List<IssueResponse>> byStatus = new EnumMap<>(IssueStatus.class);
         for (IssueStatus status : IssueStatus.values()) {
             byStatus.put(status, new ArrayList<>());
         }
+
         issueRepository.findByProjectIdOrderByCreatedAtDesc(projectId).forEach(issue -> {
             IssueStatus status = issue.getStatus() == null ? IssueStatus.TODO : issue.getStatus();
             byStatus.get(status).add(IssueResponse.from(issue));
@@ -40,8 +53,6 @@ public class BoardService {
             columns.add(new BoardColumnResponse(status, status.getLabel(),
                     List.copyOf(status.nextStatuses()), issues.size(), issues));
         }
-
-        ProjectRole myRole = permissionService.roleOf(project, current.getId()).orElse(null);
-        return new BoardResponse(project.getId(), project.getKey(), project.getName(), myRole, columns);
+        return columns;
     }
 }

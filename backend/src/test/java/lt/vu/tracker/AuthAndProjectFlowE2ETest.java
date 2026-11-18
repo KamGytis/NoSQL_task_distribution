@@ -661,7 +661,7 @@ class AuthAndProjectFlowE2ETest {
 
         String issueKey = field(created.body(), "key");
         String issuePath = "/issues/" + issueKey;
-        var views = List.of("issues");
+        var views = List.of("issues", "board");
 
         for (String view : views) {
             var response = admin.send("GET", projectPath + "/" + view, null);
