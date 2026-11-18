@@ -5,6 +5,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import java.util.Properties;
 
 @Configuration
 public class ClickHouseConfig {
@@ -19,6 +20,11 @@ public class ClickHouseConfig {
         dataSource.setUrl(url);
         dataSource.setUsername(username);
         dataSource.setPassword(password);
+        
+        Properties properties = new Properties();
+        properties.setProperty("compress", "false");
+        properties.setProperty("decompress", "false");
+        dataSource.setConnectionProperties(properties);
 
         return new JdbcTemplate(dataSource);
     }

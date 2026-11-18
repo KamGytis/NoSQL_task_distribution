@@ -29,10 +29,9 @@ server:
     include-stacktrace: never
 
 clickhouse:
-  clickhouse:
-    url: ${CLICKHOUSE_URL:jdbc:clickhouse://localhost:8123/tracker}
-    username: ${CLICKHOUSE_USERNAME:tracker}
-    password: ${CLICKHOUSE_PASSWORD:tracker}
+  url: ${CLICKHOUSE_URL:jdbc:clickhouse://localhost:8123/tracker}
+  username: ${CLICKHOUSE_USERNAME:tracker}
+  password: ${CLICKHOUSE_PASSWORD:tracker}
 
   analytics:
     export:

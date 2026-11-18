@@ -20,6 +20,13 @@ import java.util.concurrent.TimeUnit;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import java.util.List;
+import lt.vu.tracker.model.IssueHistory;
+import lt.vu.tracker.service.AnalyticsService;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 
 
@@ -28,7 +35,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = "spring.mongodb.uri=mongodb://localhost:27017/tracker_test")
+        properties = {
+                "spring.mongodb.uri=mongodb://localhost:27017/tracker_test",
+                "clickhouse.url=jdbc:clickhouse://localhost:8123/tracker_analytics_test",
+                "analytics.export.enabled=false"
+        })
 class AuthAndProjectFlowE2ETest {
 
     @Value("${local.server.port}")
@@ -36,6 +47,16 @@ class AuthAndProjectFlowE2ETest {
 
     @Autowired
     private StringRedisTemplate redis;
+
+    @Autowired
+    private AnalyticsService analytics;
+
+    @Autowired
+    @Qualifier("clickHouseJdbcTemplate")
+    private JdbcTemplate clickHouse;
+
+    @Autowired
+    private MongoTemplate mongo;
 
     // One simulated browser so it keeps its own session cookie.
     private final class Api {
@@ -821,6 +842,84 @@ class AuthAndProjectFlowE2ETest {
 
         assertThat(owner.send("GET", path + "/issues?size=101", null).statusCode())
                 .isEqualTo(400);
+    }
+
+    @Test
+    void issueChangesAreExportedToClickHouseAndRetriesAreDeduplicated() {
+        Api admin = registerAndLogin(uniqueEmail());
+        String projectId = sprintTestProject(admin);
+
+        var created = admin.send(
+                "POST",
+                "/projects/" + projectId + "/issues",
+                "{\"title\":\"Analytics test issue\"}"
+        );
+        assertThat(created.statusCode()).isEqualTo(201);
+        String key = field(created.body(), "key");
+
+        assertThat(admin.send(
+                "POST",
+                "/issues/" + key + "/transition",
+                "{\"status\":\"IN_PROGRESS\"}"
+        ).statusCode()).isEqualTo(200);
+
+        assertThat(admin.send(
+                "DELETE", "/issues/" + key, null
+        ).statusCode()).isEqualTo(204);
+
+        // Process older pending history as well as this test's events.
+        for (int batch = 0; batch < 100; batch++) {
+            if (analytics.exportPendingEvents() == 0) {
+                break;
+            }
+        }
+
+        Long count = clickHouse.queryForObject(
+                """
+                SELECT count()
+                FROM analytics_events FINAL
+                WHERE project_id = ?
+                """,
+                Long.class,
+                projectId
+        );
+        assertThat(count).isEqualTo(3L);
+
+        List<String> types = clickHouse.queryForList(
+                """
+                SELECT event_type
+                FROM analytics_events FINAL
+                WHERE project_id = ?
+                """,
+                String.class,
+                projectId
+        );
+        assertThat(types).containsExactlyInAnyOrder(
+                "ISSUE_CREATED",
+                "ISSUE_TRANSITIONED",
+                "ISSUE_DELETED"
+        );
+
+        IssueHistory history = mongo.findOne(
+                Query.query(Criteria.where("projectId").is(projectId)),
+                IssueHistory.class
+        );
+        assertThat(history).isNotNull();
+        assertThat(history.getAnalyticsExported()).isTrue();
+
+        // Simulate delivery of the same event again.
+        analytics.record(history);
+
+        Long afterRetry = clickHouse.queryForObject(
+                """
+                SELECT count()
+                FROM analytics_events FINAL
+                WHERE project_id = ?
+                """,
+                Long.class,
+                projectId
+        );
+        assertThat(afterRetry).isEqualTo(3L);
     }
 
     private String sprintTestProject(Api admin) {
