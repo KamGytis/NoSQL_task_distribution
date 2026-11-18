@@ -7,7 +7,7 @@
 | users | Registered users | Done |
 | projects | Projects, members with roles, workflow | Done |
 | issues | Epics, stories, tasks, bugs, subtasks | TODO |
-| sprints | Sprint planning | TODO |
+| sprints | Sprint planning | Done |
 | boards | Board columns and WIP limits | TODO |
 | comments | Issue comments with @mentions | TODO |
 | worklogs | Time tracking | TODO |
@@ -22,6 +22,8 @@
 - issues.key (unique)
 - issues: {projectId, status}, {projectId, sprintId}, {assigneeId, status}
 - comments: {issueId, createdAt}
+- sprints: {projectId: 1, createdAt: -1}
+- sprints.projectId (unique where status is "ACTIVE")
 
 ## Embedded vs referenced
 

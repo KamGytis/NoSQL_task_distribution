@@ -29,5 +29,17 @@ Authentication: session cookie (stored in Redis)
 | POST | /issues/{key}/transition | Change status | Done |
 | DELETE | /issues/{key} | Delete issue | Done |
 
+## Sprints and backlog
+| Method | Endpoint | Description | Status |
+|---|---|---|---|
+| POST | /projects/{projectId}/sprints | Create a planned sprint | Done |
+| GET | /projects/{projectId}/sprints | List project sprints | Done |
+| GET | /projects/{projectId}/backlog | List issues without a sprint | Done |
+| GET | /sprints/{sprintId}/issues | List issues assigned to a sprint | Done |
+| PUT | /issues/{key}/sprint | Assign or move an issue to a sprint | Done |
+| DELETE | /issues/{key}/sprint | Move an issue back to the backlog | Done |
+| POST | /sprints/{sprintId}/start | Start a planned sprint | Done |
+| POST | /sprints/{sprintId}/complete | Complete the active sprint | Done |
+
 ## Status codes
 201 created, 400 validation error, 401 not logged in, 403 no permission, 404 not found, 409 conflict

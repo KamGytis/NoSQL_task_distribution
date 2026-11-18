@@ -24,6 +24,7 @@ public class Issue {
 
     @Indexed
     private String projectId;
+    private String sprintId;
     
     @Indexed
     private String assigneeId;

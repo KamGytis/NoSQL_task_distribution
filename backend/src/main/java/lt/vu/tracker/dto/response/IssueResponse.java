@@ -14,7 +14,8 @@ public record IssueResponse(
         IssueStatus status,
         String reporterId,
         String assigneeId,
-        Instant createdAt
+        Instant createdAt,
+        String sprintId
 ) {
     public static IssueResponse from(Issue issue) {
         return new IssueResponse(
@@ -26,7 +27,8 @@ public record IssueResponse(
                 issue.getStatus(),
                 issue.getReporterId(),
                 issue.getAssigneeId(),
-                issue.getCreatedAt()
+                issue.getCreatedAt(),
+                issue.getSprintId()
         );
     }
 }
