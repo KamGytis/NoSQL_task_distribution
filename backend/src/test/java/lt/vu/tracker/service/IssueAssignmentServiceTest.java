@@ -26,9 +26,10 @@ class IssueAssignmentServiceTest {
     private final ProjectRepository projects = mock(ProjectRepository.class);
     private final NotificationService notifications = mock(NotificationService.class);
     private final IssueHistoryService history = mock(IssueHistoryService.class);
+    private final ProjectReadCache cache = mock(ProjectReadCache.class);
     private final IssueAssignmentService service = new IssueAssignmentService(
-            issues, users, new PermissionService(projects), notifications, history);
-
+            issues, users, new PermissionService(projects), notifications, history, cache
+    );
     private final User alice = user("u1", "alice@test.lt");   // ADMIN
     private final User bob = user("u2", "bob@test.lt");       // MEMBER
     private final User carol = user("u3", "carol@test.lt");   // VIEWER
@@ -70,6 +71,7 @@ class IssueAssignmentServiceTest {
         verify(issues).save(issue);
         verify(history).recordAssigned(issue, null, bob, alice);
         verify(notifications).notifyAssigned(bob, alice, issue);
+        verify(cache).invalidate("p1");
     }
 
     @Test
@@ -102,7 +104,7 @@ class IssueAssignmentServiceTest {
 
         assertThat(res.assigneeId()).isEqualTo("u2");
         verify(issues, never()).save(any(Issue.class));
-        verifyNoInteractions(history, notifications);
+        verifyNoInteractions(history, notifications, cache);
     }
 
     @Test
@@ -167,6 +169,7 @@ class IssueAssignmentServiceTest {
         verify(issues).save(issue);
         verify(history).recordAssigned(issue, bob, null, alice);
         verifyNoInteractions(notifications);
+        verify(cache).invalidate("p1");
     }
 
     @Test
@@ -176,7 +179,7 @@ class IssueAssignmentServiceTest {
         service.unassign("DEMO-1", alice);
 
         verify(issues, never()).save(any(Issue.class));
-        verifyNoInteractions(history, notifications);
+        verifyNoInteractions(history, notifications, cache);
     }
 
     @Test

@@ -30,7 +30,10 @@ class SprintServiceTest {
     private final IssueRepository issues = mock(IssueRepository.class);
     private final PermissionService permissions = mock(PermissionService.class);
     private final SprintLock lock = mock(SprintLock.class);
-    private final SprintService service = new SprintService(sprints, issues, permissions, lock);
+    private final ProjectReadCache cache = mock(ProjectReadCache.class);
+    private final SprintService service = new SprintService(
+            sprints, issues, permissions, lock, cache
+    );
     private final User current = user("u1", "sprint-test@test.lt");
 
     @BeforeEach
@@ -58,7 +61,7 @@ class SprintServiceTest {
         Sprint other = sprint("p2", SprintStatus.PLANNED);
 
         assertStatus(() -> service.assign("DEMO-1", other.getId(), current), 404);
-        verify(issues, never()).save(any(Issue.class));
+        verify(cache, never()).invalidate("p1");
     }
 
     @Test
@@ -85,6 +88,40 @@ class SprintServiceTest {
 
         assertThat(service.complete(active.getId(), current).status()).isEqualTo(SprintStatus.COMPLETED);
         assertThat(active.getCompletedAt()).isNotNull();
+    }
+
+    @Test
+    void assigningIssueToSprintInvalidatesProjectCache() {
+        Issue issue = new Issue();
+        issue.setKey("DEMO-1");
+        issue.setProjectId("p1");
+
+        when(issues.findByKey("DEMO-1")).thenReturn(Optional.of(issue));
+        when(issues.save(issue)).thenReturn(issue);
+        Sprint target = sprint("p1", SprintStatus.PLANNED);
+
+        IssueResponse response = service.assign("DEMO-1", target.getId(), current);
+
+        assertThat(response.sprintId()).isEqualTo(target.getId());
+        verify(issues).save(issue);
+        verify(cache).invalidate("p1");
+    }
+
+    @Test
+    void movingIssueToBacklogInvalidatesProjectCache() {
+        Issue issue = new Issue();
+        issue.setKey("DEMO-1");
+        issue.setProjectId("p1");
+        issue.setSprintId("s1");
+
+        when(issues.findByKey("DEMO-1")).thenReturn(Optional.of(issue));
+        when(issues.save(issue)).thenReturn(issue);
+
+        IssueResponse response = service.moveToBacklog("DEMO-1", current);
+
+        assertThat(response.sprintId()).isNull();
+        verify(issues).save(issue);
+        verify(cache).invalidate("p1");
     }
 
     private Sprint sprint(String projectId, SprintStatus status) {

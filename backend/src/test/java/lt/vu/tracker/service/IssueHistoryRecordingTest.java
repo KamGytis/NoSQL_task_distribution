@@ -34,8 +34,8 @@ class IssueHistoryRecordingTest {
     private final IssueHistoryService history = mock(IssueHistoryService.class);
     private final IssueService service = new IssueService(
             issues, new PermissionService(projects), redis, mock(CommentRepository.class), history,
-            mock(WorklogRepository.class));
-
+            mock(WorklogRepository.class), mock(ProjectReadCache.class)
+    );
     private final User alice = user("u1", "alice@test.lt");   // ADMIN
     private final User bob = user("u2", "bob@test.lt");       // MEMBER
     private final User carol = user("u3", "carol@test.lt");   // VIEWER

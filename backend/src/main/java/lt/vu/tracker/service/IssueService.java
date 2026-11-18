@@ -31,6 +31,7 @@ public class IssueService {
     private final CommentRepository commentRepository;
     private final IssueHistoryService historyService;
     private final WorklogRepository worklogRepository;
+    private final ProjectReadCache projectReadCache;
 
     public IssueResponse create(String projectId, IssueRequest request, User current) {
         Project project = permissionService.requireRole(
@@ -63,6 +64,7 @@ public class IssueService {
                     HttpStatus.CONFLICT, "Generated issue key already exists", exception
             );
         }
+        projectReadCache.invalidate(saved.getProjectId());
         historyService.recordCreated(saved, current);
         return IssueResponse.from(saved);
     }
@@ -88,6 +90,7 @@ public class IssueService {
         issue.setDescription(request.description());
 
         Issue saved = issueRepository.save(issue);
+        projectReadCache.invalidate(saved.getProjectId());
         historyService.recordUpdated(saved, oldTitle, oldDescription, current);
         return IssueResponse.from(saved);
     }
@@ -109,6 +112,7 @@ public class IssueService {
 
         issue.setStatus(status);
         Issue saved = issueRepository.save(issue);
+        projectReadCache.invalidate(saved.getProjectId());
         historyService.recordTransition(saved, from, status, current);
         return IssueResponse.from(saved);
     }
@@ -116,6 +120,7 @@ public class IssueService {
     public void delete(String key, User current) {
         Issue issue = requireIssue(key, current, ProjectRole.ADMIN);
         issueRepository.delete(issue);
+        projectReadCache.invalidate(issue.getProjectId());
         commentRepository.deleteByIssueId(issue.getId());
         worklogRepository.deleteByIssueId(issue.getId());
         historyService.recordDeleted(issue, current);
