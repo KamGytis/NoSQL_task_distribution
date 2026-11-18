@@ -47,8 +47,12 @@ public class SprintService {
 
     public List<IssueResponse> backlog(String projectId, User current) {
         permissions.requireRole(projectId, current.getId(), ProjectRole.VIEWER);
-        return issues.findByProjectIdAndSprintIdIsNullOrderByCreatedAtDesc(projectId)
-                .stream().map(IssueResponse::from).toList();
+
+        return projectReadCache.read(projectId, "backlog", IssueResponse[].class,
+                () -> issues.findByProjectIdAndSprintIdIsNullOrderByCreatedAtDesc(projectId)
+                        .stream()
+                        .map(IssueResponse::from)
+                        .toList());
     }
 
     public List<IssueResponse> sprintIssues(String sprintId, User current) {

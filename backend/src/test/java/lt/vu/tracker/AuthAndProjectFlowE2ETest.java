@@ -653,6 +653,7 @@ class AuthAndProjectFlowE2ETest {
     void cachesProjectViewsAndRefreshesThemAfterIssueChanges() {
         Api admin = registerAndLogin(uniqueEmail());
         String projectId = sprintTestProject(admin);
+        String sprintId = createTestSprint(admin, projectId, "Cache test sprint");
         String projectPath = "/projects/" + projectId;
 
         var created = admin.send("POST", projectPath + "/issues",
@@ -661,7 +662,7 @@ class AuthAndProjectFlowE2ETest {
 
         String issueKey = field(created.body(), "key");
         String issuePath = "/issues/" + issueKey;
-        var views = List.of("issues", "board");
+        var views = List.of("issues", "board", "backlog");
 
         for (String view : views) {
             var response = admin.send("GET", projectPath + "/" + view, null);
@@ -698,6 +699,20 @@ class AuthAndProjectFlowE2ETest {
                     .contains("After cache invalidation")
                     .doesNotContain("Before cache invalidation");
         }
+        
+        assertThat(admin.send("PUT", issuePath + "/sprint",
+                "{\"sprintId\":\"" + sprintId + "\"}").statusCode()).isEqualTo(200);
+
+        var backlog = admin.send("GET", projectPath + "/backlog", null);
+        assertThat(backlog.statusCode()).isEqualTo(200);
+        assertThat(backlog.body()).doesNotContain(issueKey);
+
+        assertThat(admin.send("DELETE", issuePath + "/sprint", null).statusCode())
+                .isEqualTo(200);
+
+        backlog = admin.send("GET", projectPath + "/backlog", null);
+        assertThat(backlog.statusCode()).isEqualTo(200);
+        assertThat(backlog.body()).contains(issueKey);
     }
 
     private String sprintTestProject(Api admin) {

@@ -49,6 +49,9 @@ class SprintServiceTest {
         when(issues.findByProjectIdAndSprintIdIsNullOrderByCreatedAtDesc("p1"))
                 .thenReturn(List.of(issue));
 
+        when(cache.read(eq("p1"), eq("backlog"), eq(IssueResponse[].class), any()))
+                .thenAnswer(call -> call.<Supplier<List<IssueResponse>>>getArgument(3).get());
+
         assertThat(service.backlog("p1", current)).extracting(IssueResponse::key).containsExactly("DEMO-1");
         verify(permissions).requireRole("p1", "u1", VIEWER);
     }
