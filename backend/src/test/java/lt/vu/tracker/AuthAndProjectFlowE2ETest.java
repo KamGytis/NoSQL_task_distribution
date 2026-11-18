@@ -13,6 +13,13 @@ import java.net.http.HttpResponse;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.concurrent.Callable;
+import java.util.concurrent.Executors;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+
+
+
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -562,5 +569,97 @@ class AuthAndProjectFlowE2ETest {
         // assignment changes show up in the audit trail
         assertThat(alice.send("GET", issuePath + "/history", null).body())
                 .contains("\"field\":\"assignee\"", "\"newValue\":\"" + carolEmail + "\"");
+    }
+    @Test
+    void movesAnIssueBetweenBacklogAndSprintAndCompletesTheSprint() {
+        Api admin = registerAndLogin(uniqueEmail());
+        String projectId = sprintTestProject(admin);
+        String sprintId = createTestSprint(admin, projectId, "Sprint one");
+        String projects = "/projects/" + projectId;
+        String sprint = "/sprints/" + sprintId;
+
+        var createdIssue = admin.send("POST", projects + "/issues", "{\"title\":\"Backlog task\"}");
+        assertThat(createdIssue.statusCode()).isEqualTo(201);
+        String key = field(createdIssue.body(), "key");
+        String issuePath = "/issues/" + key + "/sprint";
+
+        var backlog = admin.send("GET", projects + "/backlog", null);
+        assertThat(backlog.statusCode()).isEqualTo(200);
+        assertThat(backlog.body()).contains(key);
+
+        var assigned = admin.send("PUT", issuePath, "{\"sprintId\":\"" + sprintId + "\"}");
+        assertThat(assigned.statusCode()).isEqualTo(200);
+        assertThat(field(assigned.body(), "sprintId")).isEqualTo(sprintId);
+        backlog = admin.send("GET", projects + "/backlog", null);
+        assertThat(backlog.statusCode()).isEqualTo(200);
+        assertThat(backlog.body()).doesNotContain(key);
+
+        var sprintIssues = admin.send("GET", sprint + "/issues", null);
+        assertThat(sprintIssues.statusCode()).isEqualTo(200);
+        assertThat(sprintIssues.body()).contains(key);
+        assertThat(admin.send("POST", sprint + "/complete", null).statusCode()).isEqualTo(409);
+        assertSprintStatus(admin.send("POST", sprint + "/start", null), "ACTIVE");
+        assertSprintStatus(admin.send("POST", sprint + "/complete", null), "COMPLETED");
+
+        assertThat(admin.send("DELETE", issuePath, null).statusCode()).isEqualTo(200);
+        backlog = admin.send("GET", projects + "/backlog", null);
+        assertThat(backlog.statusCode()).isEqualTo(200);
+        assertThat(backlog.body()).contains(key);
+    }
+
+    @Test
+    void onlyOneOfTwoConcurrentStartsSucceeds() throws Exception {
+        Api admin = registerAndLogin(uniqueEmail());
+        String projectId = sprintTestProject(admin);
+        String first = createTestSprint(admin, projectId, "First candidate");
+        String second = createTestSprint(admin, projectId, "Second candidate");
+        var startTogether = new CountDownLatch(1);
+        var pool = Executors.newFixedThreadPool(2);
+
+        try {
+            Callable<HttpResponse<String>> startFirst = () -> {
+                startTogether.await();
+                return admin.send("POST", "/sprints/" + first + "/start", null);
+            };
+            Callable<HttpResponse<String>> startSecond = () -> {
+                startTogether.await();
+                return admin.send("POST", "/sprints/" + second + "/start", null);
+            };
+            var firstCall = pool.submit(startFirst);
+            var secondCall = pool.submit(startSecond);
+            startTogether.countDown();
+
+            var firstResult = firstCall.get(20, TimeUnit.SECONDS);
+            var secondResult = secondCall.get(20, TimeUnit.SECONDS);
+            assertThat(java.util.List.of(firstResult.statusCode(), secondResult.statusCode()))
+                    .containsExactlyInAnyOrder(200, 409);
+
+            String active = firstResult.statusCode() == 200 ? first : second;
+            String waiting = firstResult.statusCode() == 200 ? second : first;
+            assertSprintStatus(admin.send("POST", "/sprints/" + active + "/complete", null), "COMPLETED");
+            assertSprintStatus(admin.send("POST", "/sprints/" + waiting + "/start", null), "ACTIVE");
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    private String sprintTestProject(Api admin) {
+        var created = admin.send("POST", "/projects",
+                "{\"key\":\"" + uniqueProjectKey() + "\",\"name\":\"Sprint test project\"}");
+        assertThat(created.statusCode()).isEqualTo(201);
+        return field(created.body(), "id");
+    }
+
+    private String createTestSprint(Api admin, String projectId, String name) {
+        var created = admin.send("POST", "/projects/" + projectId + "/sprints",
+                "{\"name\":\"" + name + "\"}");
+        assertThat(created.statusCode()).isEqualTo(201);
+        assertThat(field(created.body(), "status")).isEqualTo("PLANNED");
+        return field(created.body(), "id");
+    }
+
+    private void assertSprintStatus(HttpResponse<String> response, String status) {
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(field(response.body(), "status")).isEqualTo(status);
     }
 }
