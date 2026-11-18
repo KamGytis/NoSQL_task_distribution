@@ -38,3 +38,16 @@
 | Redis | Sessions, issue key counter, sprint locks, caching |
 | ClickHouse | Analytics events and reports |
 | Elasticsearch | Full-text search over issues and comments |
+
+## ClickHouse analytics
+| Column | Type | Purpose |
+|---|---|---|
+| event_id | String | MongoDB issue_history document ID |
+| project_id | String | Project ID |
+| issue_id | String | Issue ID |
+| issue_key | String | Human-readable issue key |
+| actor_id | String | User who performed the action |
+| event_type | LowCardinality(String) | Issue history action |
+| changes_json | String | JSON array of field changes |
+| occurred_at_ms | Int64 | Event time as Unix milliseconds |
+| occurred_at | DateTime64(3, UTC) | Materialized event timestamp |
