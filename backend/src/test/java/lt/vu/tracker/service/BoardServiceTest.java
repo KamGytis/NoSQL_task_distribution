@@ -21,18 +21,28 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.util.function.Supplier;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+
 class BoardServiceTest {
     private final IssueRepository issues = mock(IssueRepository.class);
     private final ProjectRepository projects = mock(ProjectRepository.class);
-    private final BoardService service = new BoardService(issues, new PermissionService(projects));
+
 
     private final User alice = user("u1", "alice@test.lt");   // ADMIN
     private final User carol = user("u3", "carol@test.lt");   // VIEWER
+
+    private final ProjectReadCache cache = mock(ProjectReadCache.class);
+    private final BoardService service = new BoardService(issues, new PermissionService(projects), cache);
 
     @BeforeEach
     void setUp() {
         when(projects.findById("p1")).thenReturn(Optional.of(
                 project("p1", member("u1", ADMIN), member("u3", VIEWER))));
+        when(cache.read(eq("p1"), eq("board"), eq(BoardColumnResponse[].class), any()))
+                .thenAnswer(call -> call.<Supplier<List<BoardColumnResponse>>>getArgument(3).get());
     }
 
     private Issue issue(String key, IssueStatus status) {

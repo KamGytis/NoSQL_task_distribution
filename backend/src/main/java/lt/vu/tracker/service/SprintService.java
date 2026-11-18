@@ -27,6 +27,7 @@ public class SprintService {
     private final IssueRepository issues;
     private final PermissionService permissions;
     private final SprintLock lock;
+    private final ProjectReadCache projectReadCache;
 
     public SprintResponse create(String projectId, CreateSprintRequest request, User current) {
         permissions.requireRole(projectId, current.getId(), ProjectRole.ADMIN);
@@ -46,8 +47,12 @@ public class SprintService {
 
     public List<IssueResponse> backlog(String projectId, User current) {
         permissions.requireRole(projectId, current.getId(), ProjectRole.VIEWER);
-        return issues.findByProjectIdAndSprintIdIsNullOrderByCreatedAtDesc(projectId)
-                .stream().map(IssueResponse::from).toList();
+
+        return projectReadCache.read(projectId, "backlog", IssueResponse[].class,
+                () -> issues.findByProjectIdAndSprintIdIsNullOrderByCreatedAtDesc(projectId)
+                        .stream()
+                        .map(IssueResponse::from)
+                        .toList());
     }
 
     public List<IssueResponse> sprintIssues(String sprintId, User current) {
@@ -74,7 +79,9 @@ public class SprintService {
                 throw conflict("Cannot add an issue to a completed sprint");
             }
             issue.setSprintId(sprintId);
-            return IssueResponse.from(issues.save(issue));
+            Issue saved = issues.save(issue);
+            projectReadCache.invalidate(saved.getProjectId());
+            return IssueResponse.from(saved);
         });
     }
 
@@ -88,7 +95,9 @@ public class SprintService {
                 return IssueResponse.from(issue);
             }
             issue.setSprintId(null);
-            return IssueResponse.from(issues.save(issue));
+            Issue saved = issues.save(issue);
+            projectReadCache.invalidate(saved.getProjectId());
+            return IssueResponse.from(saved);
         });
     }
 

@@ -24,8 +24,8 @@ class IssueDeleteTest {
     private final WorklogRepository worklogs = mock(WorklogRepository.class);
     private final IssueService service = new IssueService(
             issues, new PermissionService(projects), mock(StringRedisTemplate.class), comments,
-            mock(IssueHistoryService.class), worklogs);
-
+            mock(IssueHistoryService.class), worklogs, mock(ProjectReadCache.class)
+    );
     private final User alice = user("u1", "alice@test.lt");   // ADMIN
     private final User bob = user("u2", "bob@test.lt");       // MEMBER
     private Issue issue;

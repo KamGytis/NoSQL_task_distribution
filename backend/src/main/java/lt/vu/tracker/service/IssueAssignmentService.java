@@ -22,6 +22,7 @@ public class IssueAssignmentService {
     private final PermissionService permissionService;
     private final NotificationService notificationService;
     private final IssueHistoryService historyService;
+    private final ProjectReadCache projectReadCache;
 
     public IssueResponse assign(String key, String assigneeId, User current) {
         Issue issue = findIssue(key);
@@ -43,6 +44,7 @@ public class IssueAssignmentService {
         User previous = previousAssignee(issue);
         issue.setAssigneeId(assigneeId);
         Issue saved = issueRepository.save(issue);
+        projectReadCache.invalidate(saved.getProjectId());
         historyService.recordAssigned(saved, previous, assignee, current);
         notificationService.notifyAssigned(assignee, current, saved);
         return IssueResponse.from(saved);
@@ -58,6 +60,7 @@ public class IssueAssignmentService {
         User previous = previousAssignee(issue);
         issue.setAssigneeId(null);
         Issue saved = issueRepository.save(issue);
+        projectReadCache.invalidate(saved.getProjectId());
         historyService.recordAssigned(saved, previous, null, current);
         return IssueResponse.from(saved);
     }
