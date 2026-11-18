@@ -17,6 +17,9 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.Executors;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import java.util.List;
 
 
 
@@ -30,6 +33,9 @@ class AuthAndProjectFlowE2ETest {
 
     @Value("${local.server.port}")
     private int port;
+
+    @Autowired
+    private StringRedisTemplate redis;
 
     // One simulated browser so it keeps its own session cookie.
     private final class Api {
@@ -640,6 +646,57 @@ class AuthAndProjectFlowE2ETest {
             assertSprintStatus(admin.send("POST", "/sprints/" + waiting + "/start", null), "ACTIVE");
         } finally {
             pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void cachesProjectViewsAndRefreshesThemAfterIssueChanges() {
+        Api admin = registerAndLogin(uniqueEmail());
+        String projectId = sprintTestProject(admin);
+        String projectPath = "/projects/" + projectId;
+
+        var created = admin.send("POST", projectPath + "/issues",
+                "{\"title\":\"Before cache invalidation\"}");
+        assertThat(created.statusCode()).isEqualTo(201);
+
+        String issueKey = field(created.body(), "key");
+        String issuePath = "/issues/" + issueKey;
+        var views = List.of("issues");
+
+        for (String view : views) {
+            var response = admin.send("GET", projectPath + "/" + view, null);
+            assertThat(response.statusCode()).isEqualTo(200);
+            assertThat(response.body()).contains("Before cache invalidation");
+        }
+
+        String prefix = "tracker:cache:project:" + projectId + ":";
+        String oldRevision = redis.opsForValue().get(prefix + "revision");
+        assertThat(oldRevision).isNotNull();
+
+        for (String view : views) {
+            assertThat(redis.opsForValue().get(prefix + view + ":" + oldRevision))
+                    .contains("Before cache invalidation");
+        }
+
+        Api outsider = registerAndLogin(uniqueEmail());
+        for (String view : views) {
+            assertThat(outsider.send("GET", projectPath + "/" + view, null).statusCode())
+                    .isEqualTo(404);
+        }
+
+        assertThat(admin.send("PUT", issuePath,
+                "{\"title\":\"After cache invalidation\"}").statusCode())
+                .isEqualTo(200);
+
+        assertThat(redis.opsForValue().get(prefix + "revision"))
+                .isNotEqualTo(oldRevision);
+
+        for (String view : views) {
+            var response = admin.send("GET", projectPath + "/" + view, null);
+            assertThat(response.statusCode()).isEqualTo(200);
+            assertThat(response.body())
+                    .contains("After cache invalidation")
+                    .doesNotContain("Before cache invalidation");
         }
     }
 

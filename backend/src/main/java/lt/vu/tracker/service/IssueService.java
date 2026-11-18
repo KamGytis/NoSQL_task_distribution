@@ -72,10 +72,11 @@ public class IssueService {
     public List<IssueResponse> list(String projectId, User current) {
         permissionService.requireRole(projectId, current.getId(), ProjectRole.VIEWER);
 
-        return issueRepository.findByProjectIdOrderByCreatedAtDesc(projectId)
-                .stream()
-                .map(IssueResponse::from)
-                .toList();
+        return projectReadCache.read(projectId, "issues", IssueResponse[].class,
+                () -> issueRepository.findByProjectIdOrderByCreatedAtDesc(projectId)
+                        .stream()
+                        .map(IssueResponse::from)
+                        .toList());
     }
 
     public IssueResponse get(String key, User current) {
