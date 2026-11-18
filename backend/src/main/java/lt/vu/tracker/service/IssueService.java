@@ -28,6 +28,7 @@ public class IssueService {
     private final PermissionService permissionService;
     private final StringRedisTemplate redisTemplate;
     private final CommentRepository commentRepository;
+    private final IssueHistoryService historyService;
 
     public IssueResponse create(String projectId, IssueRequest request, User current) {
         Project project = permissionService.requireRole(
@@ -52,14 +53,18 @@ public class IssueService {
         issue.setReporterId(current.getId());
         issue.setCreatedAt(Instant.now());
 
+        Issue saved;
         try {
-            return IssueResponse.from(issueRepository.insert(issue));
+            saved = issueRepository.insert(issue);
         } catch (DuplicateKeyException exception) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT, "Generated issue key already exists", exception
             );
         }
+        historyService.recordCreated(saved, current);
+        return IssueResponse.from(saved);
     }
+
     public List<IssueResponse> list(String projectId, User current) {
         permissionService.requireRole(projectId, current.getId(), ProjectRole.VIEWER);
 
@@ -75,10 +80,14 @@ public class IssueService {
 
     public IssueResponse update(String key, IssueRequest request, User current) {
         Issue issue = requireIssue(key, current, ProjectRole.MEMBER);
+        String oldTitle = issue.getTitle();
+        String oldDescription = issue.getDescription();
         issue.setTitle(request.title().trim());
         issue.setDescription(request.description());
 
-        return IssueResponse.from(issueRepository.save(issue));
+        Issue saved = issueRepository.save(issue);
+        historyService.recordUpdated(saved, oldTitle, oldDescription, current);
+        return IssueResponse.from(saved);
     }
 
     public IssueResponse transition(String key, IssueStatus status, User current) {
@@ -97,13 +106,16 @@ public class IssueService {
         }
 
         issue.setStatus(status);
-        return IssueResponse.from(issueRepository.save(issue));
+        Issue saved = issueRepository.save(issue);
+        historyService.recordTransition(saved, from, status, current);
+        return IssueResponse.from(saved);
     }
 
     public void delete(String key, User current) {
         Issue issue = requireIssue(key, current, ProjectRole.ADMIN);
         issueRepository.delete(issue);
         commentRepository.deleteByIssueId(issue.getId());
+        historyService.recordDeleted(issue, current);
     }
 
     private Issue requireIssue(String key, User current, ProjectRole minimumRole) {
