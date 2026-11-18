@@ -303,4 +303,68 @@ class AuthAndProjectFlowE2ETest {
         assertThat(alice.send("DELETE", issuePath, null).statusCode()).isEqualTo(204);
         assertThat(alice.send("GET", issuePath + "/comments", null).statusCode()).isEqualTo(404);
     }
+    //History
+    @Test
+    void issueChangesAreWrittenToTheAuditTrail() {
+        Api alice = registerAndLogin(uniqueEmail());
+        String bobEmail = uniqueEmail();
+        Api bob = registerAndLogin(bobEmail);
+        String carolEmail = uniqueEmail();
+        Api carol = registerAndLogin(carolEmail);
+        Api outsider = registerAndLogin(uniqueEmail());
+
+        HttpResponse<String> project = alice.send("POST", "/projects",
+                "{\"key\":\"" + uniqueProjectKey() + "\",\"name\":\"Audit demo\"}");
+        assertThat(project.statusCode()).isEqualTo(201);
+        String projectId = field(project.body(), "id");
+        joinProject(alice, projectId, bob, bobEmail, "MEMBER");
+        joinProject(alice, projectId, carol, carolEmail, "VIEWER");
+
+        HttpResponse<String> created = bob.send("POST", "/projects/" + projectId + "/issues",
+                "{\"title\":\"Audit me\",\"description\":\"first\"}");
+        assertThat(created.statusCode()).isEqualTo(201);
+        String issuePath = "/issues/" + field(created.body(), "key");
+
+        // three real changes: a title edit and a status move (plus the creation above)
+        assertThat(bob.send("PUT", issuePath, "{\"title\":\"Audit me v2\",\"description\":\"first\"}").statusCode())
+                .isEqualTo(200);
+        assertThat(bob.send("POST", issuePath + "/transition", "{\"status\":\"IN_PROGRESS\"}").statusCode())
+                .isEqualTo(200);
+
+        // no-ops and failed attempts must leave no trace
+        assertThat(bob.send("PUT", issuePath, "{\"title\":\"Audit me v2\",\"description\":\"first\"}").statusCode())
+                .isEqualTo(200);
+        assertThat(bob.send("POST", issuePath + "/transition", "{\"status\":\"IN_PROGRESS\"}").statusCode())
+                .isEqualTo(200);
+        assertThat(bob.send("POST", issuePath + "/transition", "{\"status\":\"NOPE\"}").statusCode())
+                .isEqualTo(400);
+        assertThat(carol.send("PUT", issuePath, "{\"title\":\"Viewer edit\"}").statusCode()).isEqualTo(403);
+
+        // a viewer can read the history: exactly three entries, newest first
+        HttpResponse<String> history = carol.send("GET", issuePath + "/history", null);
+        assertThat(history.statusCode()).isEqualTo(200);
+        String body = history.body();
+        assertThat(body).contains("\"action\":\"CREATED\"", "\"action\":\"UPDATED\"", "\"action\":\"TRANSITIONED\"",
+                "\"oldValue\":\"Audit me\"", "\"newValue\":\"Audit me v2\"",
+                "\"oldValue\":\"TODO\"", "\"newValue\":\"IN_PROGRESS\"",
+                "\"email\":\"" + bobEmail + "\"");
+        assertThat(body.split("\"action\":", -1).length - 1).isEqualTo(3);
+        assertThat(body.indexOf("\"action\":\"TRANSITIONED\"")).isLessThan(body.indexOf("\"action\":\"UPDATED\""));
+        assertThat(body.indexOf("\"action\":\"UPDATED\"")).isLessThan(body.indexOf("\"action\":\"CREATED\""));
+
+        // outsiders see nothing
+        assertThat(outsider.send("GET", issuePath + "/history", null).statusCode()).isEqualTo(404);
+        assertThat(outsider.send("GET", "/projects/" + projectId + "/activity", null).statusCode()).isEqualTo(404);
+
+        // the project feed has the same three entries
+        HttpResponse<String> feed = carol.send("GET", "/projects/" + projectId + "/activity", null);
+        assertThat(feed.statusCode()).isEqualTo(200);
+        assertThat(feed.body()).contains("\"totalItems\":3");
+
+        // deleting the issue is itself recorded, and the history outlives the issue
+        assertThat(alice.send("DELETE", issuePath, null).statusCode()).isEqualTo(204);
+        assertThat(alice.send("GET", issuePath + "/history", null).statusCode()).isEqualTo(404);
+        HttpResponse<String> after = alice.send("GET", "/projects/" + projectId + "/activity", null);
+        assertThat(after.body()).contains("\"totalItems\":4", "\"action\":\"DELETED\"");
+    }
 }
