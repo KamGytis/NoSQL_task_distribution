@@ -271,4 +271,24 @@ class IssueHistoryServiceTest {
         assertStatus(() -> service.listForProject("p1", 0, 20, dave), 404);
         verify(history, never()).findByProjectId(any(), any(Pageable.class));
     }
+    @Test
+    void assigningRecordsTheOldAndNewAssignee() {
+        service.recordAssigned(issue("Fix login", "desc", IssueStatus.TODO), null, bob, alice);
+
+        IssueHistory h = written();
+        assertThat(h.getAction()).isEqualTo(HistoryAction.UPDATED);
+        assertThat(h.getChanges()).hasSize(1);
+        assertThat(h.getChanges().get(0).getField()).isEqualTo("assignee");
+        assertThat(h.getChanges().get(0).getOldValue()).isNull();
+        assertThat(h.getChanges().get(0).getNewValue()).isEqualTo("bob@test.lt");
+    }
+
+    @Test
+    void unassigningRecordsTheOldAssignee() {
+        service.recordAssigned(issue("Fix login", "desc", IssueStatus.TODO), bob, null, alice);
+
+        FieldChange change = written().getChanges().get(0);
+        assertThat(change.getOldValue()).isEqualTo("bob@test.lt");
+        assertThat(change.getNewValue()).isNull();
+    }
 }

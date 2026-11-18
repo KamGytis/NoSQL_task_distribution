@@ -13,7 +13,7 @@ import lt.vu.tracker.model.enums.ProjectRole;
 import lt.vu.tracker.repository.CommentRepository;
 import lt.vu.tracker.repository.IssueRepository;
 import lt.vu.tracker.repository.UserRepository;
-import lt.vu.tracker.service.NotificationService
+import lt.vu.tracker.service.NotificationService;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;

@@ -439,4 +439,128 @@ class AuthAndProjectFlowE2ETest {
         assertThat(alice.send("DELETE", issuePath, null).statusCode()).isEqualTo(204);
         assertThat(alice.send("GET", issuePath + "/worklogs", null).statusCode()).isEqualTo(404);
     }
+    //Notifications
+    private long unreadCount(Api api) {
+        HttpResponse<String> response = api.send("GET", "/notifications/unread-count", null);
+        assertThat(response.statusCode()).isEqualTo(200);
+        Matcher matcher = Pattern.compile("\"count\":(\\d+)").matcher(response.body());
+        assertThat(matcher.find()).as(response.body()).isTrue();
+        return Long.parseLong(matcher.group(1));
+    }
+
+    private String assignJson(Api who) {
+        return "{\"assigneeId\":\"" + who.userId + "\"}";
+    }
+
+    @Test
+    void notificationsAreCreatedForMentionsAndAssignmentsAndCanBeRead() {
+        String aliceEmail = uniqueEmail();
+        Api alice = registerAndLogin(aliceEmail);
+        String bobEmail = uniqueEmail();
+        Api bob = registerAndLogin(bobEmail);
+        String carolEmail = uniqueEmail();
+        Api carol = registerAndLogin(carolEmail);
+        String viewerEmail = uniqueEmail();
+        Api viewer = registerAndLogin(viewerEmail);
+        Api outsider = registerAndLogin(uniqueEmail());
+
+        assertThat(new Api().send("GET", "/notifications", null).statusCode()).isEqualTo(401);
+
+        HttpResponse<String> project = alice.send("POST", "/projects",
+                "{\"key\":\"" + uniqueProjectKey() + "\",\"name\":\"Notify demo\"}");
+        assertThat(project.statusCode()).isEqualTo(201);
+        String projectId = field(project.body(), "id");
+        joinProject(alice, projectId, bob, bobEmail, "MEMBER");
+        joinProject(alice, projectId, carol, carolEmail, "MEMBER");
+        joinProject(alice, projectId, viewer, viewerEmail, "VIEWER");
+
+        HttpResponse<String> issue = alice.send("POST", "/projects/" + projectId + "/issues",
+                "{\"title\":\"Notify me\"}");
+        assertThat(issue.statusCode()).isEqualTo(201);
+        String issueKey = field(issue.body(), "key");
+        String issuePath = "/issues/" + issueKey;
+        String assignPath = issuePath + "/assignee";
+
+        // a mention notifies the mentioned member, but mentioning yourself notifies nobody
+        HttpResponse<String> comment = bob.send("POST", issuePath + "/comments",
+                "{\"text\":\"Please look @" + carolEmail + " and @" + bobEmail + "\"}");
+        assertThat(comment.statusCode()).isEqualTo(201);
+        String commentId = field(comment.body(), "id");
+        assertThat(unreadCount(carol)).isEqualTo(1);
+        assertThat(unreadCount(bob)).isZero();
+        assertThat(unreadCount(alice)).isZero();
+        HttpResponse<String> mentionList = carol.send("GET", "/notifications", null);
+        assertThat(mentionList.statusCode()).isEqualTo(200);
+        assertThat(mentionList.body()).contains("\"type\":\"MENTION\"", "\"email\":\"" + bobEmail + "\"",
+                "\"issueKey\":\"" + issueKey + "\"", "\"read\":false", "mentioned you", "\"unreadCount\":1");
+
+        // assigning notifies the assignee, and assigning the same person again does nothing
+        HttpResponse<String> assigned = alice.send("PUT", assignPath, assignJson(carol));
+        assertThat(assigned.statusCode()).isEqualTo(200);
+        assertThat(assigned.body()).contains("\"assigneeId\":\"" + carol.userId + "\"");
+        assertThat(unreadCount(carol)).isEqualTo(2);
+        assertThat(carol.send("GET", "/notifications", null).body())
+                .contains("\"type\":\"ASSIGNED\"", "assigned " + issueKey + " to you");
+        assertThat(alice.send("PUT", assignPath, assignJson(carol)).statusCode()).isEqualTo(200);
+        assertThat(unreadCount(carol)).isEqualTo(2);
+
+        // assigning yourself notifies nobody, then handing it back to carol notifies her again
+        assertThat(alice.send("PUT", assignPath, assignJson(alice)).statusCode()).isEqualTo(200);
+        assertThat(unreadCount(alice)).isZero();
+        assertThat(alice.send("PUT", assignPath, assignJson(carol)).statusCode()).isEqualTo(200);
+        assertThat(unreadCount(carol)).isEqualTo(3);
+
+        // who can be assigned, and who can assign
+        assertThat(alice.send("PUT", assignPath, assignJson(viewer)).statusCode()).isEqualTo(400);
+        assertThat(alice.send("PUT", assignPath, assignJson(outsider)).statusCode()).isEqualTo(400);
+        assertThat(alice.send("PUT", assignPath, "{\"assigneeId\":\"  \"}").statusCode()).isEqualTo(400);
+        assertThat(viewer.send("PUT", assignPath, assignJson(carol)).statusCode()).isEqualTo(403);
+        assertThat(outsider.send("PUT", assignPath, assignJson(carol)).statusCode()).isEqualTo(404);
+
+        // editing a comment only notifies people who were not mentioned before
+        assertThat(bob.send("PUT", "/comments/" + commentId,
+                "{\"text\":\"Look @" + carolEmail + " and @" + aliceEmail + "\"}").statusCode()).isEqualTo(200);
+        assertThat(unreadCount(alice)).isEqualTo(1);
+        assertThat(unreadCount(carol)).isEqualTo(3);
+        assertThat(bob.send("PUT", "/comments/" + commentId,
+                "{\"text\":\"Look again @" + carolEmail + " and @" + aliceEmail + "\"}").statusCode())
+                .isEqualTo(200);
+        assertThat(unreadCount(alice)).isEqualTo(1);
+
+        // marking one notification read: only its owner can, and it can be repeated
+        HttpResponse<String> unread = carol.send("GET", "/notifications?unread=true", null);
+        assertThat(unread.body()).contains("\"totalItems\":3");
+        String notificationId = field(unread.body(), "id");
+        assertThat(bob.send("PUT", "/notifications/" + notificationId + "/read", null).statusCode())
+                .isEqualTo(404);
+        HttpResponse<String> read = carol.send("PUT", "/notifications/" + notificationId + "/read", null);
+        assertThat(read.statusCode()).isEqualTo(200);
+        assertThat(read.body()).contains("\"read\":true");
+        assertThat(unreadCount(carol)).isEqualTo(2);
+        assertThat(carol.send("PUT", "/notifications/" + notificationId + "/read", null).statusCode())
+                .isEqualTo(200);
+        assertThat(unreadCount(carol)).isEqualTo(2);
+        assertThat(carol.send("PUT", "/notifications/000000000000000000000000/read", null).statusCode())
+                .isEqualTo(404);
+
+        // marking everything read keeps the history of notifications
+        HttpResponse<String> all = carol.send("PUT", "/notifications/read-all", null);
+        assertThat(all.statusCode()).isEqualTo(200);
+        assertThat(all.body()).contains("\"count\":2");
+        assertThat(unreadCount(carol)).isZero();
+        assertThat(carol.send("GET", "/notifications?unread=true", null).body()).contains("\"totalItems\":0");
+        assertThat(carol.send("GET", "/notifications", null).body()).contains("\"totalItems\":3");
+
+        // unassigning clears the assignee, notifies nobody, and can be repeated
+        HttpResponse<String> cleared = alice.send("DELETE", assignPath, null);
+        assertThat(cleared.statusCode()).isEqualTo(200);
+        assertThat(cleared.body()).contains("\"assigneeId\":null");
+        assertThat(alice.send("DELETE", assignPath, null).statusCode()).isEqualTo(200);
+        assertThat(unreadCount(carol)).isZero();
+        assertThat(viewer.send("DELETE", assignPath, null).statusCode()).isEqualTo(403);
+
+        // assignment changes show up in the audit trail
+        assertThat(alice.send("GET", issuePath + "/history", null).body())
+                .contains("\"field\":\"assignee\"", "\"newValue\":\"" + carolEmail + "\"");
+    }
 }
