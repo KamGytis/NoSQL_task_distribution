@@ -5,6 +5,7 @@ import lt.vu.tracker.model.User;
 import lt.vu.tracker.repository.CommentRepository;
 import lt.vu.tracker.repository.IssueRepository;
 import lt.vu.tracker.repository.ProjectRepository;
+import lt.vu.tracker.repository.WorklogRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -20,9 +21,10 @@ class IssueDeleteTest {
     private final IssueRepository issues = mock(IssueRepository.class);
     private final ProjectRepository projects = mock(ProjectRepository.class);
     private final CommentRepository comments = mock(CommentRepository.class);
+    private final WorklogRepository worklogs = mock(WorklogRepository.class);
     private final IssueService service = new IssueService(
             issues, new PermissionService(projects), mock(StringRedisTemplate.class), comments,
-            mock(IssueHistoryService.class));
+            mock(IssueHistoryService.class), worklogs);
 
     private final User alice = user("u1", "alice@test.lt");   // ADMIN
     private final User bob = user("u2", "bob@test.lt");       // MEMBER
@@ -40,10 +42,11 @@ class IssueDeleteTest {
     }
 
     @Test
-    void deletingAnIssueAlsoDeletesItsComments() {
+    void deletingAnIssueAlsoDeletesItsCommentsAndWorklogs() {
         service.delete("DEMO-1", alice);
         verify(issues).delete(issue);
         verify(comments).deleteByIssueId("i1");
+        verify(worklogs).deleteByIssueId("i1");
     }
 
     @Test
@@ -51,5 +54,6 @@ class IssueDeleteTest {
         assertStatus(() -> service.delete("DEMO-1", bob), 403);
         verify(issues, never()).delete(any(Issue.class));
         verify(comments, never()).deleteByIssueId(any());
+        verify(worklogs, never()).deleteByIssueId(any());
     }
 }

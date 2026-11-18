@@ -7,6 +7,7 @@ import lt.vu.tracker.model.enums.IssueStatus;
 import lt.vu.tracker.repository.CommentRepository;
 import lt.vu.tracker.repository.IssueRepository;
 import lt.vu.tracker.repository.ProjectRepository;
+import lt.vu.tracker.repository.WorklogRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
