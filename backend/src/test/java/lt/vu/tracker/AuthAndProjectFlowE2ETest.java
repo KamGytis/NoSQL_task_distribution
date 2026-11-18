@@ -367,4 +367,76 @@ class AuthAndProjectFlowE2ETest {
         HttpResponse<String> after = alice.send("GET", "/projects/" + projectId + "/activity", null);
         assertThat(after.body()).contains("\"totalItems\":4", "\"action\":\"DELETED\"");
     }
+
+    //Worklog
+    @Test
+    void timeLoggingRespectsRolesAndAddsUp() {
+        Api alice = registerAndLogin(uniqueEmail());
+        String bobEmail = uniqueEmail();
+        Api bob = registerAndLogin(bobEmail);
+        String carolEmail = uniqueEmail();
+        Api carol = registerAndLogin(carolEmail);
+        Api outsider = registerAndLogin(uniqueEmail());
+
+        HttpResponse<String> project = alice.send("POST", "/projects",
+                "{\"key\":\"" + uniqueProjectKey() + "\",\"name\":\"Time demo\"}");
+        assertThat(project.statusCode()).isEqualTo(201);
+        String projectId = field(project.body(), "id");
+        joinProject(alice, projectId, bob, bobEmail, "MEMBER");
+        joinProject(alice, projectId, carol, carolEmail, "VIEWER");
+
+        HttpResponse<String> issue = alice.send("POST", "/projects/" + projectId + "/issues",
+                "{\"title\":\"Track my time\"}");
+        assertThat(issue.statusCode()).isEqualTo(201);
+        String issuePath = "/issues/" + field(issue.body(), "key");
+
+        // a member logs 90 minutes now, and 30 minutes from two days ago
+        HttpResponse<String> first = bob.send("POST", issuePath + "/worklogs",
+                "{\"minutes\":90,\"note\":\"Wrote the endpoint\"}");
+        assertThat(first.statusCode()).isEqualTo(201);
+        assertThat(first.body()).contains("\"minutes\":90", "\"timeSpent\":\"1h 30m\"", "\"canEdit\":true");
+        String firstId = field(first.body(), "id");
+        String twoDaysAgo = java.time.Instant.now().minusSeconds(2 * 86400L).toString();
+        HttpResponse<String> second = bob.send("POST", issuePath + "/worklogs",
+                "{\"minutes\":30,\"startedAt\":\"" + twoDaysAgo + "\"}");
+        assertThat(second.statusCode()).isEqualTo(201);
+
+        // validation and roles
+        assertThat(bob.send("POST", issuePath + "/worklogs", "{\"minutes\":0}").statusCode()).isEqualTo(400);
+        assertThat(bob.send("POST", issuePath + "/worklogs", "{\"minutes\":1441}").statusCode()).isEqualTo(400);
+        assertThat(bob.send("POST", issuePath + "/worklogs", "{\"note\":\"no minutes\"}").statusCode())
+                .isEqualTo(400);
+        String inTwoDays = java.time.Instant.now().plusSeconds(2 * 86400L).toString();
+        assertThat(bob.send("POST", issuePath + "/worklogs",
+                "{\"minutes\":30,\"startedAt\":\"" + inTwoDays + "\"}").statusCode()).isEqualTo(400);
+        assertThat(carol.send("POST", issuePath + "/worklogs", "{\"minutes\":30}").statusCode()).isEqualTo(403);
+        assertThat(outsider.send("POST", issuePath + "/worklogs", "{\"minutes\":30}").statusCode()).isEqualTo(404);
+
+        // a viewer can read: total 120 minutes, newest start first, and no edit or delete rights
+        HttpResponse<String> list = carol.send("GET", issuePath + "/worklogs", null);
+        assertThat(list.statusCode()).isEqualTo(200);
+        assertThat(list.body()).contains("\"totalMinutes\":120", "\"totalTime\":\"2h\"",
+                "\"canEdit\":false", "\"canDelete\":false");
+        assertThat(list.body().indexOf("\"minutes\":90")).isLessThan(list.body().indexOf("\"minutes\":30"));
+        assertThat(outsider.send("GET", issuePath + "/worklogs", null).statusCode()).isEqualTo(404);
+
+        // only the author edits
+        assertThat(alice.send("PUT", "/worklogs/" + firstId, "{\"minutes\":10}").statusCode()).isEqualTo(403);
+        HttpResponse<String> edited = bob.send("PUT", "/worklogs/" + firstId, "{\"minutes\":45}");
+        assertThat(edited.statusCode()).isEqualTo(200);
+        assertThat(edited.body()).contains("\"minutes\":45", "\"timeSpent\":\"45m\"")
+                .doesNotContain("\"updatedAt\":null");
+        assertThat(bob.send("GET", issuePath + "/worklogs", null).body())
+                .contains("\"totalMinutes\":75", "\"totalTime\":\"1h 15m\"");
+
+        // delete: a viewer is refused, an admin may remove someone else's entry
+        assertThat(carol.send("DELETE", "/worklogs/" + firstId, null).statusCode()).isEqualTo(403);
+        assertThat(alice.send("DELETE", "/worklogs/" + firstId, null).statusCode()).isEqualTo(204);
+        assertThat(alice.send("GET", issuePath + "/worklogs", null).body()).contains("\"totalMinutes\":30");
+        assertThat(alice.send("PUT", "/worklogs/" + firstId, "{\"minutes\":5}").statusCode()).isEqualTo(404);
+
+        // once the issue is deleted its worklogs are unreachable
+        assertThat(alice.send("DELETE", issuePath, null).statusCode()).isEqualTo(204);
+        assertThat(alice.send("GET", issuePath + "/worklogs", null).statusCode()).isEqualTo(404);
+    }
 }
