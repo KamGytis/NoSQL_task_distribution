@@ -715,6 +715,114 @@ class AuthAndProjectFlowE2ETest {
         assertThat(backlog.body()).contains(issueKey);
     }
 
+    @Test
+    void savedFiltersSupportCrudAndApplyCurrentIssueCriteria() {
+        Api owner = registerAndLogin(uniqueEmail());
+        String projectId = sprintTestProject(owner);
+        String otherProjectId = sprintTestProject(owner);
+
+        var matching = owner.send("POST", "/projects/" + projectId + "/issues",
+                "{\"title\":\"Login [demo] problem\"}");
+        assertThat(matching.statusCode()).isEqualTo(201);
+        String matchingKey = field(matching.body(), "key");
+
+        var unrelated = owner.send("POST", "/projects/" + projectId + "/issues",
+                "{\"title\":\"Other task\"}");
+        assertThat(unrelated.statusCode()).isEqualTo(201);
+        String unrelatedKey = field(unrelated.body(), "key");
+
+        var otherProjectIssue = owner.send("POST",
+                "/projects/" + otherProjectId + "/issues",
+                "{\"title\":\"Login [demo] problem\"}");
+        assertThat(otherProjectIssue.statusCode()).isEqualTo(201);
+        String otherProjectKey = field(otherProjectIssue.body(), "key");
+
+        assertThat(owner.send("PUT", "/issues/" + matchingKey + "/assignee",
+                "{\"assigneeId\":\"" + owner.userId + "\"}").statusCode())
+                .isEqualTo(200);
+
+        String request = """
+            {
+              "name":"My demo tasks",
+              "projectId":"%s",
+              "status":"TODO",
+              "assigneeId":"%s",
+              "titleContains":"[DEMO]"
+            }
+            """.formatted(projectId, owner.userId);
+
+        var created = owner.send("POST", "/saved-filters", request);
+        assertThat(created.statusCode()).isEqualTo(201);
+        String id = field(created.body(), "id");
+        String path = "/saved-filters/" + id;
+
+        assertThat(owner.send("GET", "/saved-filters", null).body()).contains(id);
+        assertThat(owner.send("GET", path, null).statusCode()).isEqualTo(200);
+
+        var result = owner.send("GET", path + "/issues", null);
+        assertThat(result.statusCode()).isEqualTo(200);
+        assertThat(result.body())
+                .contains(matchingKey)
+                .doesNotContain(unrelatedKey, otherProjectKey);
+
+        assertThat(owner.send("GET", path + "/issues?page=1&size=1", null).body())
+                .isEqualTo("[]");
+
+        assertThat(owner.send("POST", "/issues/" + matchingKey + "/transition",
+                "{\"status\":\"IN_PROGRESS\"}").statusCode()).isEqualTo(200);
+        assertThat(owner.send("GET", path + "/issues", null).body()).isEqualTo("[]");
+
+        var updated = owner.send("PUT", path,
+                "{\"name\":\"All project tasks\",\"projectId\":\"" + projectId + "\"}");
+        assertThat(updated.statusCode()).isEqualTo(200);
+        assertThat(field(updated.body(), "id")).isEqualTo(id);
+
+        var all = owner.send("GET", path + "/issues", null);
+        assertThat(all.statusCode()).isEqualTo(200);
+        assertThat(all.body())
+                .contains(matchingKey, unrelatedKey)
+                .doesNotContain(otherProjectKey);
+
+        assertThat(owner.send("DELETE", path, null).statusCode()).isEqualTo(204);
+        assertThat(owner.send("GET", path, null).statusCode()).isEqualTo(404);
+        assertThat(owner.send("GET", path + "/issues", null).statusCode()).isEqualTo(404);
+    }
+
+    @Test
+    void savedFiltersArePrivateAndValidateRequests() {
+        Api owner = registerAndLogin(uniqueEmail());
+        Api other = registerAndLogin(uniqueEmail());
+        Api anonymous = new Api();
+        String projectId = sprintTestProject(owner);
+
+        String request = "{\"name\":\"Private filter\",\"projectId\":\"" + projectId + "\"}";
+        var created = owner.send("POST", "/saved-filters", request);
+        assertThat(created.statusCode()).isEqualTo(201);
+        String id = field(created.body(), "id");
+        String path = "/saved-filters/" + id;
+
+        assertThat(other.send("GET", "/saved-filters", null).body()).doesNotContain(id);
+        assertThat(other.send("GET", path, null).statusCode()).isEqualTo(404);
+        assertThat(other.send("GET", path + "/issues", null).statusCode()).isEqualTo(404);
+        assertThat(other.send("PUT", path, request).statusCode()).isEqualTo(404);
+        assertThat(other.send("DELETE", path, null).statusCode()).isEqualTo(404);
+
+        assertThat(other.send("POST", "/saved-filters", request).statusCode()).isEqualTo(404);
+        assertThat(anonymous.send("GET", "/saved-filters", null).statusCode()).isEqualTo(401);
+
+        assertThat(owner.send("POST", "/saved-filters",
+                "{\"name\":\" \",\"projectId\":\"" + projectId + "\"}").statusCode())
+                .isEqualTo(400);
+
+        assertThat(owner.send("POST", "/saved-filters",
+                "{\"name\":\"Bad status\",\"projectId\":\"" + projectId
+                        + "\",\"status\":\"UNKNOWN\"}").statusCode())
+                .isEqualTo(400);
+
+        assertThat(owner.send("GET", path + "/issues?size=101", null).statusCode())
+                .isEqualTo(400);
+    }
+
     private String sprintTestProject(Api admin) {
         var created = admin.send("POST", "/projects",
                 "{\"key\":\"" + uniqueProjectKey() + "\",\"name\":\"Sprint test project\"}");

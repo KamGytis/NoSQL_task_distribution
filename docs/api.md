@@ -41,5 +41,15 @@ Authentication: session cookie (stored in Redis)
 | POST | /sprints/{sprintId}/start | Start a planned sprint | Done |
 | POST | /sprints/{sprintId}/complete | Complete the active sprint | Done |
 
+## Saved filters
+| Method | Endpoint | Description | Status |
+|---|---|---|---|
+| POST | /saved-filters | Create a personal filter | Done |
+| GET | /saved-filters | List my filters | Done |
+| GET | /saved-filters/{id} | Get my filter | Done |
+| PUT | /saved-filters/{id} | Replace filter settings | Done |
+| DELETE | /saved-filters/{id} | Delete my filter | Done |
+| GET | /saved-filters/{id}/issues | Apply filter to current issues | Done |
+
 ## Status codes
 201 created, 400 validation error, 401 not logged in, 403 no permission, 404 not found, 409 conflict

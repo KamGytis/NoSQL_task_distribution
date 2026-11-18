@@ -13,7 +13,7 @@
 | worklogs | Time tracking | TODO |
 | issue_history | Audit trail of issue changes | TODO |
 | notifications | User notifications | TODO |
-| saved_filters | Saved search filters | TODO |
+| saved_filters | Saved search filters | Done |
 
 ## Indexes
 
@@ -24,6 +24,7 @@
 - comments: {issueId, createdAt}
 - sprints: {projectId: 1, createdAt: -1}
 - sprints.projectId (unique where status is "ACTIVE")
+- saved_filters: {ownerId: 1, createdAt: -1}
 
 ## Embedded vs referenced
 
