@@ -7,6 +7,7 @@ import lt.vu.tracker.model.enums.IssueStatus;
 import lt.vu.tracker.repository.CommentRepository;
 import lt.vu.tracker.repository.IssueRepository;
 import lt.vu.tracker.repository.ProjectRepository;
+import lt.vu.tracker.repository.WorklogRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -32,7 +33,8 @@ class IssueHistoryRecordingTest {
     private final ValueOperations<String, String> ops = mock(ValueOperations.class);
     private final IssueHistoryService history = mock(IssueHistoryService.class);
     private final IssueService service = new IssueService(
-            issues, new PermissionService(projects), redis, mock(CommentRepository.class), history);
+            issues, new PermissionService(projects), redis, mock(CommentRepository.class), history,
+            mock(WorklogRepository.class));
 
     private final User alice = user("u1", "alice@test.lt");   // ADMIN
     private final User bob = user("u2", "bob@test.lt");       // MEMBER
