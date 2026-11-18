@@ -13,6 +13,7 @@ import lt.vu.tracker.model.enums.ProjectRole;
 import lt.vu.tracker.repository.CommentRepository;
 import lt.vu.tracker.repository.IssueRepository;
 import lt.vu.tracker.repository.UserRepository;
+import lt.vu.tracker.service.NotificationService;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -39,10 +40,12 @@ public class CommentService {
     private static final Pattern MENTION =
             Pattern.compile("(?<![\\w.%+-])@([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,})");
 
+
     private final CommentRepository commentRepository;
     private final IssueRepository issueRepository;
     private final UserRepository userRepository;
     private final PermissionService permissionService;
+    private final NotificationService notificationService;
 
     public CommentResponse add(String issueKey, CommentRequest request, User current) {
         Issue issue = findIssue(issueKey);
@@ -59,6 +62,7 @@ public class CommentService {
         comment.setCreatedAt(Instant.now());
 
         Comment saved = commentRepository.save(comment);
+        notifyNewMentions(saved, List.of(), current);
         return toResponse(saved, project, current, usersFor(List.of(saved)));
     }
 
@@ -78,12 +82,14 @@ public class CommentService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the author can edit a comment");
         }
 
+        List<String> previousMentions = new ArrayList<>(comment.getMentions());
         String text = request.text().trim();
         comment.setText(text);
         comment.setMentions(resolveMentions(text, project, current));
         comment.setEditedAt(Instant.now());
 
         Comment saved = commentRepository.save(comment);
+        notifyNewMentions(saved, previousMentions, current);
         return toResponse(saved, project, current, usersFor(List.of(saved)));
     }
 
@@ -155,5 +161,14 @@ public class CommentService {
                 .toList();
         return new CommentResponse(c.getId(), c.getIssueKey(), UserSummary.from(users.get(c.getAuthorId())),
                 c.getText(), mentions, c.getCreatedAt(), c.getEditedAt(), canEdit, canDelete);
+    }
+    // Notifies only the people who were not mentioned before, so an edit never re-notifies anyone.
+    private void notifyNewMentions(Comment comment, List<String> alreadyNotified, User actor) {
+        List<String> added = comment.getMentions().stream()
+                .filter(id -> !alreadyNotified.contains(id))
+                .toList();
+        if (!added.isEmpty()) {
+            notificationService.notifyMentioned(added, actor, comment);
+        }
     }
 }

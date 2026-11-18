@@ -35,8 +35,9 @@ class CommentServiceTest {
     private final IssueRepository issues = mock(IssueRepository.class);
     private final UserRepository users = mock(UserRepository.class);
     private final ProjectRepository projects = mock(ProjectRepository.class);
+    private final NotificationService notifications = mock(NotificationService.class);
     private final CommentService service =
-            new CommentService(comments, issues, users, new PermissionService(projects));
+            new CommentService(comments, issues, users, new PermissionService(projects), notifications);
 
     private final User alice = user("u1", "alice@test.lt");   // ADMIN
     private final User bob = user("u2", "bob@test.lt");       // MEMBER
@@ -274,5 +275,39 @@ class CommentServiceTest {
     void nonMembersCannotDelete() {
         commentBy("c1", "u2");
         assertStatus(() -> service.delete("c1", dave), 404);
+    }
+    @Test
+    void mentionedMembersAreNotified() {
+        service.add("DEMO-1", new CommentRequest("Hi @carol@test.lt and @alice@test.lt"), bob);
+
+        verify(notifications).notifyMentioned(
+                argThat(ids -> new HashSet<>(ids).equals(Set.of("u1", "u3"))), eq(bob), any(Comment.class));
+    }
+
+    @Test
+    void aCommentWithoutMentionsNotifiesNobody() {
+        service.add("DEMO-1", new CommentRequest("Nothing to see"), bob);
+        verifyNoInteractions(notifications);
+    }
+
+    @Test
+    void anEditOnlyNotifiesTheNewlyMentionedPeople() {
+        Comment c = commentBy("c1", "u2");
+        c.setMentions(new ArrayList<>(List.of("u3")));    // carol was already mentioned
+
+        service.update("c1", new CommentRequest("Hi @carol@test.lt and @alice@test.lt"), bob);
+
+        verify(notifications).notifyMentioned(
+                argThat(ids -> new HashSet<>(ids).equals(Set.of("u1"))), eq(bob), any(Comment.class));
+    }
+
+    @Test
+    void anEditThatAddsNoMentionsNotifiesNobody() {
+        Comment c = commentBy("c1", "u2");
+        c.setMentions(new ArrayList<>(List.of("u3")));
+
+        service.update("c1", new CommentRequest("Still @carol@test.lt"), bob);
+
+        verifyNoInteractions(notifications);
     }
 }
