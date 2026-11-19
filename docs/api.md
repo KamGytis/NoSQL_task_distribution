@@ -51,5 +51,11 @@ Authentication: session cookie (stored in Redis)
 | DELETE | /saved-filters/{id} | Delete my filter | Done |
 | GET | /saved-filters/{id}/issues | Apply filter to current issues | Done |
 
+## Reports
+| Method | Endpoint | Description | Status |
+|---|---|---|---|
+| GET | /projects/{projectId}/reports/events | Event counts by type | Done |
+| GET | /projects/{projectId}/reports/activity | Daily event counts by type | Done |
+
 ## Status codes
 201 created, 400 validation error, 401 not logged in, 403 no permission, 404 not found, 409 conflict
