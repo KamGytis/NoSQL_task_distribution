@@ -10,7 +10,7 @@ Authentication: session cookie (stored in Redis)
 | POST | /auth/login | Log in | Done |
 | POST | /auth/logout | Log out | Done |
 | GET | /users/me | Current user | Done |
-| GET | /users/me/export | Download data archive | TODO |
+| GET | /users/me/export | Download data archive | Done |
 
 ## Projects
 | Method | Endpoint | Description | Status |
@@ -62,6 +62,50 @@ Authentication: session cookie (stored in Redis)
 |---|---|---|---|
 | GET | /projects/{projectId}/search | Search project issues | Done |
 | GET | /projects/{projectId}/suggest | Suggest issue keys and titles | Done |
+
+## User data export
+GET /api/v1/users/me/export requires authentication.
+The authenticated user determines the archive owner.
+
+Successful responses return:
+
+- 200 OK.
+- Content-Type: application/zip.
+- Content-Disposition: attachment; filename="user-data.zip".
+- Cache-Control: no-store.
+
+The archive contains UTF-8 JSON files:
+
+| File | Content |
+|---|---|
+| profile.json | Current user's public profile fields |
+| projects.json | Current project memberships and project metadata |
+| issues.json | Reported or assigned issues in accessible projects |
+| comments.json | Comments authored by the user |
+| worklogs.json | Worklogs recorded by the user |
+| saved-filters.json | Filters owned by the user |
+| notifications.json | Notifications addressed to the user |
+| invitations.json | Invitations sent or received by the user |
+| issue-history.json | History entries whose actor is the user |
+| manifest.json | Format version, export timestamp and record counts |
+
+Project membership arrays contain only the exporting user's membership.
+Authored records can include references to former projects.
+
+The profile uses the existing UserResponse representation.
+Collection records use MongoDB Relaxed Extended JSON.
+Object IDs and dates may use $oid and $date wrappers.
+
+Empty collections are represented by [].
+Passwords, password hashes, session data and internal indexing flags
+are excluded.
+
+Unauthenticated requests return 401.
+Handled archive-generation or database failures return 503.
+
+The archive is assembled before the HTTP response is sent.
+Collections are read separately and are not a cross-collection snapshot.
+The compressed ZIP is held in server memory during generation.
 
 ## Status codes
 201 created, 400 validation error, 401 not logged in, 403 no permission, 404 not found, 409 conflict
