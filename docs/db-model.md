@@ -72,3 +72,37 @@ Redis report keys use the existing project cache revision:
 Reports share the project cache revision with the existing project views.
 After a successful ClickHouse event write, that revision is incremented.
 Entries from older revisions expire automatically.
+
+## Elasticsearch issue index
+
+The tracker-issues-v1 index is defined in
+docker/elasticsearch/issues-index.json.
+
+| Field | Mapping |
+|---|---|
+| projectId | keyword |
+| deleted | boolean |
+| key | text with a lowercase keyword subfield named exact |
+| title | search_as_you_type |
+| description | text |
+
+The Elasticsearch document ID is the MongoDB issue ID.
+
+The search_pending index on MongoDB issue_history covers
+searchIndexed, createdAt and _id.
+
+History entries without searchIndexed=true are processed in batches of 100.
+Each entry loads the current issue before indexing it.
+Successful indexing marks that history entry as processed.
+
+Document versions use the MongoDB issue version plus one.
+External version checks reject stale updates.
+
+Deleted issues are replaced by a deleted=true marker with the maximum
+signed long version. Their document IDs must not be reused.
+Search queries exclude deletion markers.
+
+Existing issue history is also eligible for indexing.
+The export markers assume that the configured Elasticsearch index retains
+its documents. Rebuilding a lost index requires replaying history by clearing
+the searchIndexed markers in the corresponding MongoDB database.

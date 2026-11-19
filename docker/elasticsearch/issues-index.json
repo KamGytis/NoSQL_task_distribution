@@ -1,0 +1,40 @@
+{
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0,
+    "analysis": {
+      "normalizer": {
+        "lowercase_keyword": {
+          "type": "custom",
+          "filter": ["lowercase"]
+        }
+      }
+    }
+  },
+  "mappings": {
+    "dynamic": "strict",
+    "properties": {
+      "projectId": {
+        "type": "keyword"
+      },
+      "deleted": {
+        "type": "boolean"
+      },
+      "key": {
+        "type": "text",
+        "fields": {
+          "exact": {
+            "type": "keyword",
+            "normalizer": "lowercase_keyword"
+          }
+        }
+      },
+      "title": {
+        "type": "search_as_you_type"
+      },
+      "description": {
+        "type": "text"
+      }
+    }
+  }
+}

@@ -37,3 +37,10 @@ analytics:
   export:
     enabled: true
     delay-ms: 5000
+
+search:
+  url: ${SEARCH_URL:http://localhost:9200}
+  index: ${SEARCH_INDEX:tracker-issues-v1}
+  sync:
+    enabled: true
+    delay-ms: 5000

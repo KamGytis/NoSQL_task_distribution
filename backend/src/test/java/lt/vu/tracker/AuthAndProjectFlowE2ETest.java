@@ -30,6 +30,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import tools.jackson.databind.json.JsonMapper;
+import lt.vu.tracker.service.ElasticsearchGateway;
+import lt.vu.tracker.service.SearchIndexingService;
+
+import java.util.Map;
 
 
 
@@ -41,7 +45,9 @@ import static org.assertj.core.api.Assertions.assertThat;
         properties = {
                 "spring.mongodb.uri=mongodb://localhost:27017/tracker_test",
                 "clickhouse.url=jdbc:clickhouse://localhost:8123/tracker_analytics_test",
-                "analytics.export.enabled=false"
+                "analytics.export.enabled=false",
+                "search.index=tracker-issues-test-v1",
+                "search.sync.enabled=false"
         })
 class AuthAndProjectFlowE2ETest {
 
@@ -63,6 +69,12 @@ class AuthAndProjectFlowE2ETest {
 
     @Autowired
     private JsonMapper json;
+
+    @Autowired
+    private SearchIndexingService searchIndexing;
+
+    @Autowired
+    private ElasticsearchGateway searchGateway;
 
     // One simulated browser so it keeps its own session cookie.
     private final class Api {
@@ -1069,5 +1081,117 @@ class AuthAndProjectFlowE2ETest {
     private void assertSprintStatus(HttpResponse<String> response, String status) {
         assertThat(response.statusCode()).isEqualTo(200);
         assertThat(field(response.body(), "status")).isEqualTo(status);
+    }
+
+    private void syncSearchIndex() {
+        for (int batch = 0; batch < 100; batch++) {
+            if (searchIndexing.syncPending() == 0) {
+                break;
+            }
+        }
+        searchGateway.refresh();
+    }
+
+    @Test
+    void searchAndSuggestionsFollowIssueChangesAndProjectPermissions() {
+        Api admin = registerAndLogin(uniqueEmail());
+        Api outsider = registerAndLogin(uniqueEmail());
+
+        String projectId = sprintTestProject(admin);
+        String otherProjectId = sprintTestProject(admin);
+        String base = "/projects/" + projectId;
+
+        var created = admin.send("POST", base + "/issues",
+                """
+                {"title":"Login nebula problem","description":"Authentication failure"}
+                """);
+        assertThat(created.statusCode()).isEqualTo(201);
+        String key = field(created.body(), "key");
+        String issueId = field(created.body(), "id");
+
+        var foreign = admin.send(
+                "POST", "/projects/" + otherProjectId + "/issues",
+                "{\"title\":\"Login nebula problem\"}"
+        );
+        assertThat(foreign.statusCode()).isEqualTo(201);
+        String foreignKey = field(foreign.body(), "key");
+
+        syncSearchIndex();
+
+        var search = admin.send("GET", base + "/search?q=nebula", null);
+        assertThat(search.statusCode()).isEqualTo(200);
+        assertThat(search.body()).contains(key).doesNotContain(foreignKey);
+
+        var byDescription = admin.send(
+                "GET", base + "/search?q=authentication", null
+        );
+        assertThat(byDescription.statusCode()).isEqualTo(200);
+        assertThat(byDescription.body()).contains(key);
+
+        var suggest = admin.send("GET", base + "/suggest?q=log", null);
+        assertThat(suggest.statusCode()).isEqualTo(200);
+        assertThat(suggest.body()).contains(key, "Login nebula problem");
+
+        assertThat(outsider.send(
+                "GET", base + "/search?q=nebula", null
+        ).statusCode()).isEqualTo(404);
+        assertThat(outsider.send(
+                "GET", base + "/suggest?q=log", null
+        ).statusCode()).isEqualTo(404);
+        assertThat(new Api().send(
+                "GET", base + "/search?q=nebula", null
+        ).statusCode()).isEqualTo(401);
+
+        assertThat(admin.send("PUT", "/issues/" + key,
+                "{\"title\":\"Password reset\",\"description\":\"Account recovery\"}"
+        ).statusCode()).isEqualTo(200);
+
+        syncSearchIndex();
+
+        assertThat(admin.send("GET", base + "/search?q=nebula", null).body())
+                .isEqualTo("[]");
+        assertThat(admin.send("GET", base + "/search?q=password", null).body())
+                .contains(key);
+
+        // A stale version cannot overwrite the updated document.
+        searchGateway.index(issueId, 1, Map.of(
+                "projectId", projectId,
+                "deleted", false,
+                "key", key,
+                "title", "Login nebula problem",
+                "description", ""
+        ));
+        searchGateway.refresh();
+
+        assertThat(admin.send("GET", base + "/search?q=nebula", null).body())
+                .isEqualTo("[]");
+
+        assertThat(admin.send(
+                "DELETE", "/issues/" + key, null
+        ).statusCode()).isEqualTo(204);
+
+        syncSearchIndex();
+
+        // A delayed write cannot revive a deleted document.
+        searchGateway.index(issueId, 1, Map.of(
+                "projectId", projectId,
+                "deleted", false,
+                "key", key,
+                "title", "Login nebula problem",
+                "description", ""
+        ));
+        searchGateway.refresh();
+
+        assertThat(admin.send("GET", base + "/search?q=nebula", null).body())
+                .isEqualTo("[]");
+        assertThat(admin.send("GET", base + "/suggest?q=pass", null).body())
+                .isEqualTo("[]");
+
+        assertThat(admin.send(
+                "GET", base + "/search?q=ab&page=-1", null
+        ).statusCode()).isEqualTo(400);
+        assertThat(admin.send(
+                "GET", base + "/suggest?q=ab&size=21", null
+        ).statusCode()).isEqualTo(400);
     }
 }

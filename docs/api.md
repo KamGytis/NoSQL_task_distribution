@@ -57,5 +57,11 @@ Authentication: session cookie (stored in Redis)
 | GET | /projects/{projectId}/reports/events | Event counts by type | Done |
 | GET | /projects/{projectId}/reports/activity | Daily event counts by type | Done |
 
+## Search and suggestions
+| Method | Endpoint | Description | Status |
+|---|---|---|---|
+| GET | /projects/{projectId}/search | Search project issues | Done |
+| GET | /projects/{projectId}/suggest | Suggest issue keys and titles | Done |
+
 ## Status codes
 201 created, 400 validation error, 401 not logged in, 403 no permission, 404 not found, 409 conflict
