@@ -27,6 +27,9 @@ import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.jdbc.core.JdbcTemplate;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import tools.jackson.databind.json.JsonMapper;
 
 
 
@@ -57,6 +60,9 @@ class AuthAndProjectFlowE2ETest {
 
     @Autowired
     private MongoTemplate mongo;
+
+    @Autowired
+    private JsonMapper json;
 
     // One simulated browser so it keeps its own session cookie.
     private final class Api {
@@ -920,6 +926,129 @@ class AuthAndProjectFlowE2ETest {
                 projectId
         );
         assertThat(afterRetry).isEqualTo(3L);
+    }
+
+    @Test
+    void reportsUseClickHouseAndRefreshRedisAfterExport() {
+        Api admin = registerAndLogin(uniqueEmail());
+        Api outsider = registerAndLogin(uniqueEmail());
+        String projectId = sprintTestProject(admin);
+
+        LocalDate today = LocalDate.now(ZoneOffset.UTC);
+        String from = today.minusDays(1).toString();
+        String to = today.plusDays(1).toString();
+
+        String base = "/projects/" + projectId + "/reports";
+        String parameters = "?from=" + from + "&to=" + to;
+
+        // Cache empty reports before there are any project events.
+        assertThat(admin.send("GET", base + "/events" + parameters, null).body())
+                .isEqualTo("[]");
+        assertThat(admin.send("GET", base + "/activity" + parameters, null).body())
+                .isEqualTo("[]");
+
+        var created = admin.send(
+                "POST",
+                "/projects/" + projectId + "/issues",
+                "{\"title\":\"Report test issue\"}"
+        );
+        assertThat(created.statusCode()).isEqualTo(201);
+        String key = field(created.body(), "key");
+
+        assertThat(admin.send(
+                "POST",
+                "/issues/" + key + "/transition",
+                "{\"status\":\"IN_PROGRESS\"}"
+        ).statusCode()).isEqualTo(200);
+
+        // Populate cache again while the new events are still pending.
+        assertThat(admin.send("GET", base + "/events" + parameters, null).body())
+                .isEqualTo("[]");
+        assertThat(admin.send("GET", base + "/activity" + parameters, null).body())
+                .isEqualTo("[]");
+
+        for (int batch = 0; batch < 100; batch++) {
+            if (analytics.exportPendingEvents() == 0) {
+                break;
+            }
+        }
+
+        var events = admin.send("GET", base + "/events" + parameters, null);
+        assertThat(events.statusCode()).isEqualTo(200);
+
+        var eventRows = json.readTree(events.body());
+        assertThat(eventRows.size()).isEqualTo(2);
+        assertThat(eventRows.get(0).get("eventType").asText())
+                .isEqualTo("ISSUE_CREATED");
+        assertThat(eventRows.get(0).get("count").asLong()).isEqualTo(1L);
+        assertThat(eventRows.get(1).get("eventType").asText())
+                .isEqualTo("ISSUE_TRANSITIONED");
+        assertThat(eventRows.get(1).get("count").asLong()).isEqualTo(1L);
+
+        var activity = admin.send("GET", base + "/activity" + parameters, null);
+        assertThat(activity.statusCode()).isEqualTo(200);
+        assertThat(json.readTree(activity.body()).size()).isEqualTo(2);
+        assertThat(activity.body()).contains("\"day\":", "ISSUE_CREATED");
+
+        String prefix = "tracker:cache:project:" + projectId + ":";
+        String revision = redis.opsForValue().get(prefix + "revision");
+        assertThat(revision).isNotNull();
+
+        String eventsKey = prefix + "report-events:v1:"
+                + from + ":" + to + ":" + revision;
+        String dailyKey = prefix + "report-daily:v1:"
+                + from + ":" + to + ":" + revision;
+
+        assertThat(redis.opsForValue().get(eventsKey)).isEqualTo(events.body());
+        assertThat(redis.opsForValue().get(dailyKey)).isEqualTo(activity.body());
+        assertThat(redis.getExpire(eventsKey)).isBetween(0L, 60L);
+
+        assertThat(admin.send("GET", base + "/events" + parameters, null).body())
+                .isEqualTo(events.body());
+
+        // A populated cache still requires project membership.
+        assertThat(outsider.send(
+                "GET", base + "/events" + parameters, null
+        ).statusCode()).isEqualTo(404);
+        assertThat(outsider.send(
+                "GET", base + "/activity" + parameters, null
+        ).statusCode()).isEqualTo(404);
+
+        // Repeated delivery must not increase the report counts.
+        IssueHistory history = mongo.findOne(
+                Query.query(Criteria.where("projectId").is(projectId)),
+                IssueHistory.class
+        );
+        assertThat(history).isNotNull();
+        analytics.record(history);
+
+        assertThat(admin.send("GET", base + "/events" + parameters, null).body())
+                .isEqualTo(events.body());
+
+        // The same project with another date range gets another result.
+        var earlier = admin.send(
+                "GET",
+                base + "/events?from=2000-01-01&to=2000-01-02",
+                null
+        );
+        assertThat(earlier.statusCode()).isEqualTo(200);
+        assertThat(earlier.body()).isEqualTo("[]");
+
+        assertThat(admin.send(
+                "GET",
+                base + "/events?from=2026-11-20&to=2026-11-01",
+                null
+        ).statusCode()).isEqualTo(400);
+
+        assertThat(admin.send(
+                "GET",
+                base + "/activity?from=wrong&to=2026-11-20",
+                null
+        ).statusCode()).isEqualTo(400);
+
+        assertThat(new Api().send(
+                "GET", base + "/events" + parameters, null
+        ).statusCode()).isEqualTo(401);
     }
 
     private String sprintTestProject(Api admin) {

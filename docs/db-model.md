@@ -51,3 +51,24 @@
 | changes_json | String | JSON array of field changes |
 | occurred_at_ms | Int64 | Event time as Unix milliseconds |
 | occurred_at | DateTime64(3, UTC) | Materialized event timestamp |
+
+## Report queries and cache
+
+Reports aggregate analytics_events in ClickHouse.
+
+- Event counts group by event_type.
+- Daily activity groups by UTC event date and event_type.
+- Every query filters by project_id and the requested time range.
+- FINAL deduplicates repeated deliveries of the same event.
+- The existing ClickHouse table schema is reused.
+
+Redis report keys use the existing project cache revision:
+
+| Key | TTL |
+|---|---|
+| tracker:cache:project:{projectId}:report-events:v1:{from}:{to}:{revision} | 60 seconds |
+| tracker:cache:project:{projectId}:report-daily:v1:{from}:{to}:{revision} | 60 seconds |
+
+Reports share the project cache revision with the existing project views.
+After a successful ClickHouse event write, that revision is incremented.
+Entries from older revisions expire automatically.

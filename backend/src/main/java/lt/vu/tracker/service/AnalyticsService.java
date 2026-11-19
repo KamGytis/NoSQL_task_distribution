@@ -35,15 +35,18 @@ public class AnalyticsService {
     private final JdbcTemplate clickHouse;
     private final MongoTemplate mongo;
     private final JsonMapper json;
+    private final ProjectReadCache cache;
 
     public AnalyticsService(
             @Qualifier("clickHouseJdbcTemplate") JdbcTemplate clickHouse,
             MongoTemplate mongo,
-            JsonMapper json
+            JsonMapper json,
+            ProjectReadCache cache
     ) {
         this.clickHouse = clickHouse;
         this.mongo = mongo;
         this.json = json;
+        this.cache = cache;
     }
 
     public int exportPendingEvents() {
@@ -89,5 +92,7 @@ public class AnalyticsService {
                 json.writeValueAsString(entry.getChanges()),
                 entry.getCreatedAt().toEpochMilli()
         );
+
+        cache.invalidate(entry.getProjectId());
     }
 }

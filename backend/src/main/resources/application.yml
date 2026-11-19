@@ -33,7 +33,7 @@ clickhouse:
   username: ${CLICKHOUSE_USERNAME:tracker}
   password: ${CLICKHOUSE_PASSWORD:tracker}
 
-  analytics:
-    export:
-      enabled: true
-      delay-ms: 5000
+analytics:
+  export:
+    enabled: true
+    delay-ms: 5000
