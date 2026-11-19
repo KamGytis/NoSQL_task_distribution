@@ -73,7 +73,7 @@ public class ElasticsearchGateway {
     }
 
     public void refresh() {
-        request("POST", "/_refresh", Map.of(), false);
+        request("POST", "/_refresh", null, false);
     }
 
     private String request(
@@ -83,14 +83,19 @@ public class ElasticsearchGateway {
             boolean allowVersionConflict
     ) {
         try {
+            HttpRequest.BodyPublisher publisher = HttpRequest.BodyPublishers.noBody();
+            if (body != null) {
+                publisher = HttpRequest.BodyPublishers.ofString(
+                        json.writeValueAsString(body)
+                );
+            }
+
             HttpRequest request = HttpRequest.newBuilder(
                             URI.create(base + "/" + index + path)
                     )
                     .timeout(Duration.ofSeconds(10))
                     .header("Content-Type", "application/json")
-                    .method(method, HttpRequest.BodyPublishers.ofString(
-                            json.writeValueAsString(body)
-                    ))
+                    .method(method, publisher)
                     .build();
 
             HttpResponse<String> response = http.send(
