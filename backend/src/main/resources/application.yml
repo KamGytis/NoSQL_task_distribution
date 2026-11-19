@@ -29,4 +29,11 @@ server:
     include-stacktrace: never
 
 clickhouse:
-  url: jdbc:clickhouse://localhost:8123/default
+  url: ${CLICKHOUSE_URL:jdbc:clickhouse://localhost:8123/tracker}
+  username: ${CLICKHOUSE_USERNAME:tracker}
+  password: ${CLICKHOUSE_PASSWORD:tracker}
+
+  analytics:
+    export:
+      enabled: true
+      delay-ms: 5000

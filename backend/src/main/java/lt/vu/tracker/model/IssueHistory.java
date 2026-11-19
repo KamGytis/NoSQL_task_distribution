@@ -16,7 +16,8 @@ import java.util.List;
 @Document("issue_history")
 @CompoundIndexes({
         @CompoundIndex(name = "issue_time", def = "{'issueId': 1, 'createdAt': -1}"),
-        @CompoundIndex(name = "project_time", def = "{'projectId': 1, 'createdAt': -1}")
+        @CompoundIndex(name = "project_time", def = "{'projectId': 1, 'createdAt': -1}"),
+        @CompoundIndex(name = "analytics_pending", def = "{'analyticsExported': 1, 'createdAt': 1, '_id': 1}")
 })
 @Getter @Setter @NoArgsConstructor
 public class IssueHistory {
@@ -29,4 +30,5 @@ public class IssueHistory {
     private HistoryAction action;
     private List<FieldChange> changes = new ArrayList<>();
     private Instant createdAt;
+    private Boolean analyticsExported;
 }
