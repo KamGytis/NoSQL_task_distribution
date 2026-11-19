@@ -23,9 +23,10 @@ import static org.mockito.Mockito.*;
 class AnalyticsServiceTest {
     private final JdbcTemplate clickHouse = mock(JdbcTemplate.class);
     private final MongoTemplate mongo = mock(MongoTemplate.class);
+    private final ProjectReadCache cache = mock(ProjectReadCache.class);
     private final AnalyticsService service = new AnalyticsService(
-            clickHouse, mongo, JsonMapper.builder().build()
-    );
+            clickHouse, mongo, JsonMapper.builder().build(), cache);
+
 
     private final IssueHistory entry = new IssueHistory();
 
@@ -66,6 +67,8 @@ class AnalyticsServiceTest {
                 .isEqualTo("event-1");
         assertThat(update.getValue().getUpdateObject().toJson())
                 .contains("analyticsExported", "true");
+
+        verify(cache).invalidate("p1");
     }
 
     @Test
@@ -78,6 +81,7 @@ class AnalyticsServiceTest {
                 .thenReturn(1);
 
         assertThat(service.exportPendingEvents()).isZero();
+        verifyNoInteractions(cache);
 
         verify(mongo, never()).updateFirst(
                 any(Query.class), any(Update.class), eq(IssueHistory.class)
@@ -87,7 +91,10 @@ class AnalyticsServiceTest {
 
         verify(mongo).updateFirst(
                 any(Query.class), any(Update.class), eq(IssueHistory.class)
+
         );
+
+        verify(cache).invalidate("p1");
     }
 
     @Test
