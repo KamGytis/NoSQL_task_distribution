@@ -106,3 +106,25 @@ Existing issue history is also eligible for indexing.
 The export markers assume that the configured Elasticsearch index retains
 its documents. Rebuilding a lost index requires replaying history by clearing
 the searchIndexed markers in the corresponding MongoDB database.
+
+## User data archive
+Data export reads existing MongoDB collections.
+It does not create an export collection.
+
+Selection rules:
+
+- projects: members.userId matches the authenticated user.
+- issues: reporterId or assigneeId matches the user, and the project
+  is currently accessible to the user.
+- comments: authorId matches the user.
+- worklogs: userId matches the user.
+- saved_filters: ownerId matches the user.
+- notifications: userId matches the user.
+- invitations: invitedUserId or invitedBy matches the user.
+- issue_history: actorId matches the user.
+
+Every collection uses an explicit inclusion projection.
+The user profile is mapped through UserResponse.
+Only the current user's project membership element is exported.
+
+The archive format is versioned through manifest.json.

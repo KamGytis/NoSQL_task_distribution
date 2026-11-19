@@ -35,6 +35,12 @@ import lt.vu.tracker.service.SearchIndexingService;
 
 import java.util.Map;
 
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+
 
 
 
@@ -1193,5 +1199,156 @@ class AuthAndProjectFlowE2ETest {
         assertThat(admin.send(
                 "GET", base + "/suggest?q=ab&size=21", null
         ).statusCode()).isEqualTo(400);
+    }
+
+    private HttpResponse<byte[]> downloadUserArchive(Api api) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(
+                        URI.create("http://localhost:" + port + "/api/v1/users/me/export")
+                )
+                .GET()
+                .build();
+
+        return api.http.send(request, HttpResponse.BodyHandlers.ofByteArray());
+    }
+
+    private Map<String, String> readUserArchive(byte[] archive) throws Exception {
+        Map<String, String> entries = new LinkedHashMap<>();
+
+        try (ZipInputStream zip = new ZipInputStream(
+                new ByteArrayInputStream(archive), StandardCharsets.UTF_8
+        )) {
+            ZipEntry entry;
+            while ((entry = zip.getNextEntry()) != null) {
+                entries.put(entry.getName(),
+                        new String(zip.readAllBytes(), StandardCharsets.UTF_8));
+            }
+        }
+        return entries;
+    }
+
+    @Test
+    void userDataExportContainsOwnDataAndProducesDownloadableZip() throws Exception {
+        String ownerEmail = uniqueEmail();
+        String otherEmail = uniqueEmail();
+
+        Api owner = registerAndLogin(ownerEmail);
+        Api other = registerAndLogin(otherEmail);
+
+        String projectId = sprintTestProject(owner);
+        String otherProjectId = sprintTestProject(other);
+
+        var ownerIssue = owner.send(
+                "POST", "/projects/" + projectId + "/issues",
+                "{\"title\":\"Owner export issue\"}"
+        );
+        assertThat(ownerIssue.statusCode()).isEqualTo(201);
+        String ownerKey = field(ownerIssue.body(), "key");
+
+        var otherIssue = other.send(
+                "POST", "/projects/" + otherProjectId + "/issues",
+                "{\"title\":\"Other user export issue\"}"
+        );
+        assertThat(otherIssue.statusCode()).isEqualTo(201);
+        String otherKey = field(otherIssue.body(), "key");
+
+        var ownFilter = owner.send(
+                "POST", "/saved-filters",
+                "{\"name\":\"Owner export filter\",\"projectId\":\"" + projectId + "\"}"
+        );
+        assertThat(ownFilter.statusCode()).isEqualTo(201);
+
+        var foreignFilter = other.send(
+                "POST", "/saved-filters",
+                "{\"name\":\"Other private filter\",\"projectId\":\""
+                        + otherProjectId + "\"}"
+        );
+        assertThat(foreignFilter.statusCode()).isEqualTo(201);
+
+        var response = downloadUserArchive(owner);
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.headers().firstValue("Content-Type").orElse(""))
+                .startsWith("application/zip");
+        assertThat(response.headers().firstValue("Content-Disposition").orElse(""))
+                .contains("attachment", "user-data.zip");
+        assertThat(response.headers().firstValue("Cache-Control").orElse(""))
+                .contains("no-store");
+
+        Map<String, String> entries = readUserArchive(response.body());
+        assertThat(entries).hasSize(10);
+
+        var profile = json.readTree(entries.get("profile.json"));
+        assertThat(profile.get("id").asText()).isEqualTo(owner.userId);
+        assertThat(profile.get("email").asText()).isEqualTo(ownerEmail);
+        assertThat(profile.has("passwordHash")).isFalse();
+
+        assertThat(entries.get("projects.json"))
+                .contains(projectId)
+                .doesNotContain(otherProjectId);
+
+        assertThat(entries.get("issues.json"))
+                .contains(ownerKey)
+                .doesNotContain(otherKey);
+
+        assertThat(entries.get("saved-filters.json"))
+                .contains("Owner export filter")
+                .doesNotContain("Other private filter");
+
+        assertThat(entries.get("issue-history.json"))
+                .contains(ownerKey)
+                .doesNotContain(otherKey, "analyticsExported", "searchIndexed");
+
+        var manifest = json.readTree(entries.get("manifest.json"));
+        assertThat(manifest.get("userId").asText()).isEqualTo(owner.userId);
+        assertThat(manifest.get("recordCounts").get("issues.json").asLong())
+                .isEqualTo(1L);
+
+        var otherResponse = downloadUserArchive(other);
+        assertThat(otherResponse.statusCode()).isEqualTo(200);
+
+        var otherEntries = readUserArchive(otherResponse.body());
+        assertThat(json.readTree(otherEntries.get("profile.json"))
+                .get("email").asText()).isEqualTo(otherEmail);
+        assertThat(otherEntries.get("saved-filters.json"))
+                .contains("Other private filter")
+                .doesNotContain("Owner export filter");
+
+        assertThat(downloadUserArchive(new Api()).statusCode()).isEqualTo(401);
+    }
+
+    @Test
+    void userDataExportOmitsUnrelatedIssuesInSharedProject() throws Exception {
+        Api owner = registerAndLogin(uniqueEmail());
+
+        String memberEmail = uniqueEmail();
+        Api member = registerAndLogin(memberEmail);
+
+        String projectId = sprintTestProject(owner);
+        joinProject(owner, projectId, member, memberEmail, "MEMBER");
+
+        var ownersIssue = owner.send(
+                "POST", "/projects/" + projectId + "/issues",
+                "{\"title\":\"Owner shared issue\"}"
+        );
+        assertThat(ownersIssue.statusCode()).isEqualTo(201);
+        String ownerKey = field(ownersIssue.body(), "key");
+
+        var membersIssue = member.send(
+                "POST", "/projects/" + projectId + "/issues",
+                "{\"title\":\"Member shared issue\"}"
+        );
+        assertThat(membersIssue.statusCode()).isEqualTo(201);
+        String memberKey = field(membersIssue.body(), "key");
+
+        var entries = readUserArchive(downloadUserArchive(owner).body());
+
+        assertThat(entries.get("issues.json"))
+                .contains(ownerKey)
+                .doesNotContain(memberKey);
+
+        // The archive contains only the exporting user's membership element.
+        assertThat(entries.get("projects.json"))
+                .contains(owner.userId)
+                .doesNotContain(member.userId);
     }
 }
