@@ -12,12 +12,13 @@ services:
 
   clickhouse:
     image: clickhouse/clickhouse-server:latest
-    ports: ["8123:8123", "9000:9000"]
+    ports: [ "8123:8123", "9000:9000" ]
     environment:
       CLICKHOUSE_DB: tracker
       CLICKHOUSE_USER: tracker
       CLICKHOUSE_PASSWORD: tracker
-    volumes: [clickhouse_data:/var/lib/clickhouse]
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
 
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:9.0.0
