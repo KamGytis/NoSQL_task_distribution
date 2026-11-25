@@ -3,7 +3,7 @@ import { getErrorMessage } from '../api/errors'
 import { changeMemberRole, removeMember } from '../api/projects'
 import { memberName, ROLES } from '../projects/helpers'
 import type { Member, Project, ProjectRole } from '../types'
-import RoleBadge from './RoleBadge'
+import RoleBadge from './RoleBadge.tsx'
 
 interface Props {
     project: Project
